@@ -132,8 +132,12 @@ class EnergyHub:
         self.m.Solar_input = pe.Constraint(self.m.Time, self.m.Solar_inputs, self.m.Outputs, rule = Solar_input_rule)
         
         def Fixed_cost_constr_rule(m, inp):
-            m.Capacity[inp] <= m.BigM * m.y[inp]
+            return m.Capacity[inp] <= m.BigM * m.y[inp]
         self.m.Fixed_cost_constr = pe.Constraint(self.m.Inputs, rule = Fixed_cost_constr_rule)
+        
+        def Storage_balance_rule(m, t, out):
+            return m.E[t,out] == m.Storage_standing_losses[out] * m.E[t-1,out] + m.Storage_charging_eff[out] * m.Qin[t,out] - (1 / m.Storage_discharging_eff) * m.Qout[t,out]
+        self.m.Storage_balance = pe.Constraint(self.m.Time, self.m.Outputs, rule = Storage_balance_rule)
         
         
         
