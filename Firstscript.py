@@ -6,6 +6,7 @@ Created on Wed Jun 26 18:17:22 2019
 """
 
 import pandas as pd
+import numpy as np
 
 # Defining input values for model sets
 # ====================================
@@ -26,6 +27,15 @@ Loads = pd.read_excel('Loads.xlsx', index_col=None, header=None)    # Read from 
 Loads.index = range(1, 289)
 Loads.columns = ['Heat','Elec']
 Loads = Loads.stack().to_dict()
+
+Number_of_days = list(np.repeat(2, 288))
+P_solar = 1
+
+Network_efficiency = 0.80
+Network_length = 200
+Network_lifetime = 50
+Net_inv_cost_per_m = 800
+Roof_area = 200
 
 # Generation technologies
 # -----------------------
