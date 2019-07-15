@@ -32,7 +32,9 @@ class EnergyHub:
         self.m.Time = pe.Set(initialize = self.inp.Time, doc = 'Time steps considered in the model')
         self.m.First_hour = pe.Set(initialize = self.inp.First_hour, within = self.m.Time, doc = 'The first hour of each typical day considered in the model')
         self.m.Inputs = pe.Set(initialize = self.inp.Inputs, doc = 'The energy conversion technologies of the energy hub')
-        self.m.Solar_inputs = pe.Set(initialize = self.inp.Solar_inputs, within = self.m.Inputs, doc = 'Energy conversion technologies that use solar energy')
+        self.m.Buildings = pe.RangeSet(1, self.inp.Number_of_buildings, doc = 'Number of buildings considered for solar installations')
+        self.m.Solar_pv_inputs = pe.Set(initialize = self.inp.Solar_pv_inputs, within = self.m.Inputs, doc = 'Solar PV technologies')
+        self.m.Solar_th_inputs = pe.Set(initialize = self.inp.Solar_th_inputs, within = self.m.Inputs, doc = 'Solar thermal technologies')
         self.m.Inputs_wo_grid = pe.Set(initialize = self.inp.Inputs_wo_grid, doc = 'Subset of input energy streams without the grid')
         self.m.Dispatchable_Tech = pe.Set(initialize = self.inp.Dispatchable_Tech, within = self.m.Inputs, doc = 'Subset for dispatchable/controllable technologies')
         self.m.CHP_Tech = pe.Set(initialize = self.inp.CHP_Tech, within = self.m.Inputs, doc = 'Subset of CHP engine technologies')
@@ -44,7 +46,7 @@ class EnergyHub:
         
         # Load parameters
         # ---------------
-        self.m.Loads = pe.Param(self.m.Time, self.m.Outputs, initialize = self.inp.Loads, doc = 'Time-varying energy demand patterns for the energy hub')
+        self.m.Loads = pe.Param(self.m.Time, self.m.Outputs, default = 0, initialize = self.inp.Loads, doc = 'Time-varying energy demand patterns for the energy hub')
         self.m.Number_of_days = pe.Param(self.m.Time, default = 0, initialize = self.inp.Number_of_days, doc = 'The number of days that each time step of typical day corresponds to')
         
         # Technical parameters
@@ -79,11 +81,12 @@ class EnergyHub:
         # Environmental parameters
         # ------------------------
         self.m.Carbon_factors = pe.Param(self.m.Inputs, initialize = self.inp.Carbon_factors, doc = 'Energy carrier CO2 emission factors')
+        self.m.epsilon = pe.Param(initialize = 10^8, mutable = True, doc = 'Epsilon value used for the multi-objective epsilon-constrained optimization')
         
         # Misc parameters
         # ---------------
-        self.m.Roof_area = pe.Param(initialize = self.inp.Roof_area, doc = 'Available roof area for the installation of solar technologies')
-        self.m.P_solar = pe.Param(self.m.Time, self.m.Solar_inputs, initialize = self.inp.P_solar, doc = 'Incoming solar radiation patterns (kWh/m2) for solar technologies')
+        self.m.Roof_area = pe.Param(self.m.Buildings, initialize = self.inp.Roof_area, doc = 'Available roof area for the installation of solar technologies')
+        self.m.P_solar = pe.Param(self.m.Time, self.m.Buildings, initialize = self.inp.P_solar, doc = 'Incoming solar radiation patterns (kWh/m2) for solar technologies')
         self.m.BigM = pe.Param(default = 10^5, doc = 'Big M: Sufficiently large value')
         
     
@@ -93,10 +96,13 @@ class EnergyHub:
         # Generation technologies
         # -----------------------
         self.m.P = pe.Var(self.m.Time, self.m.Inputs, within = pe.NonNegativeReals, doc = 'The input energy stream at each generation device of the energy hub at each time step')
-        self.m.P_export = pe.Var(self.m.Time, self.m.Outputs, within = pe.NonNegativeReals, doc = 'Exported energy (in this case only electricity exports are allowed)')
+        self.m.P_export = pe.Var(self.m.Time, self.m.Outputs, within = pe.NonNegativeReals,
+                         doc = 'Exported energy (in this case only electricity exports are allowed)')                
+#        self.m.P_export = pe.Var(((t, out) for t in self.m.Time for out in self.m.Outputs if out == 'Elec'), within = pe.NonNegativeReals,
+#                                 doc = 'Exported energy (in this case only electricity exports are allowed)')
         self.m.y = pe.Var(self.m.Inputs, within = pe.Binary, doc = 'Binary variable denoting the installation (=1) of energy generation technology')
         self.m.Capacity = pe.Var(self.m.Inputs, within = pe.NonNegativeReals, doc = 'Installed capacity for energy generation technology')
-#        self.m.Capacity= pe.Var((out,inp) for out in a.m.Outputs for inp in a.m.Inputs if a.m.Cmatrix[out,inp] > 0, within = pe.NonNegativeReals,
+#        self.m.Capacity= pe.Var((out,inp) for out in self.m.Outputs for inp in self.m.Inputs if self.m.Cmatrix[out,inp] > 0, within = pe.NonNegativeReals,
 #                                doc = 'Installed capacity for energy generation technology')
         
         # Storage technologies
@@ -126,26 +132,39 @@ class EnergyHub:
         
         # Generation constraints
         # ----------------------
-        
         def Capacity_constraint_rule(m, t, disp, out):
             return m.P[t,disp] * m.Cmatrix[out,disp] <= m.Capacity[disp]
         self.m.Capacity_constraint = pe.Constraint(self.m.Time, self.m.Dispatchable_Tech, self.m.Outputs, rule = Capacity_constraint_rule, 
                                                    doc = 'Constraint preventing capacity violation for the generation technologies of the energy hub')
         
-        def Solar_input_rule(m, t, sol, out):
-            return m.P[t,sol] == m.P_solar[t,sol] * m.Capacity[sol]
-        self.m.Solar_input = pe.Constraint(self.m.Time, self.m.Solar_inputs, self.m.Outputs, rule = Solar_input_rule,
-                                           doc = 'Constraint connecting the solar radiation per m2 with the area of solar technologies')
+        def Solar_pv_input_rule(m, t, sol_pv, bldg):
+            return m.P[t,sol_pv] == m.P_solar[t,bldg] * m.Capacity[sol_pv]
+        self.m.Solar_pv_input = pe.Constraint(((t, sol_pv, bldg) for t in self.m.Time
+                                                              for i, sol_pv in enumerate(self.m.Solar_pv_inputs) 
+                                                              for k, bldg in enumerate(self.m.Buildings) if i == k),
+                                                              rule = Solar_pv_input_rule,
+                                                              doc = 'Constraint connecting the solar radiation per m2 with the area of solar PV technologies')
+        
+        def Solar_th_input_rule(m, t, sol_th, bldg):
+            return m.P[t,sol_th] == m.P_solar[t,bldg] * m.Capacity[sol_th]
+        self.m.Solar_th_input = pe.Constraint(((t, sol_th, bldg) for t in self.m.Time
+                                                              for i, sol_th in enumerate(self.m.Solar_th_inputs)
+                                                              for k, bldg in enumerate(self.m.Buildings) if i == k),
+                                                              rule = Solar_th_input_rule,
+                                                              doc = 'Constraint connecting the solar radiation per m2 with the area of solar thermal technologies')
         
         def Fixed_cost_constr_rule(m, inp):
             return m.Capacity[inp] <= m.BigM * m.y[inp]
         self.m.Fixed_cost_constr = pe.Constraint(self.m.Inputs, rule = Fixed_cost_constr_rule,
                                                  doc = 'Constraint for the formulation of the fixed cost in the objective function')
         
-        def Roof_area_non_violation_rule(m):
-            return sum(m.Capacity[sol] for sol in m.Solar_inputs) <= m.Roof_area;
-        self.m.Roof_area_non_violation = pe.Constraint(rule = Roof_area_non_violation_rule,
-                                                       doc = 'Non violation of the maximum roof area for solar installations')
+        def Roof_area_non_violation_rule(m, sol_pv, sol_st, bldg):
+            return m.Capacity[sol_pv] + m.Capacity[sol_st] <= 100# m.Roof_area[bldg]
+        self.m.Roof_area_non_violation = pe.Constraint(((pv, st, bldg) for i, pv in enumerate(self.m.Solar_pv_inputs) 
+                                                                       for j, st in enumerate(self.m.Solar_th_inputs)
+                                                                       for k, bldg in enumerate(self.m.Buildings) if i == j == k),
+                                                                       rule = Roof_area_non_violation_rule,
+                                                                       doc = 'Non violation of the maximum roof area for solar installations')
         
         
         # Storage constraints
@@ -191,36 +210,88 @@ class EnergyHub:
         
         def Operating_cost_rule(m):
             return m.Operating_cost == sum(m.Operating_costs[inp] * m.P[t,inp] * m.Number_of_days[t] for t in m.Time for inp in m.Inputs)
-        self.m.Operating_cost_def = pe.Constraint(rule = Operating_cost_rule, doc = '')
+        self.m.Operating_cost_def = pe.Constraint(rule = Operating_cost_rule,
+                                                  doc = 'Definition of the operating cost component of the total energy system cost')
         
         def Income_via_exports_rule(m):
             return m.Income_via_exports == sum(m.FiT[out] * m.P_export[t,out] * m.Number_of_days[t] for t in m.Time for out in m.Outputs)
-        self.m.Income_via_exports_def = pe.Constraint(rule = Income_via_exports_rule, doc = '')
+        self.m.Income_via_exports_def = pe.Constraint(rule = Income_via_exports_rule,
+                                                      doc = 'Definition of the income due to electricity exports component of the total energy system cost')
         
         def Investment_cost_rule(m):
             return m.Investment_cost == sum(m.Operating_costs[inp] * m.P[t,inp] * m.Number_of_days[t] for t in m.Time for inp in m.Inputs)
-        self.m.Investment_cost_def = pe.Constraint(rule = Investment_cost_rule, doc = '')
+        self.m.Investment_cost_def = pe.Constraint(rule = Investment_cost_rule,
+                                                   doc = 'Definition of the investment cost component of the total energy system cost')
         
         def Total_cost_rule(m):
             return m.Total_cost == m.Investment_cost + m.Operating_cost - m.Income_via_exports
-        self.m.Total_cost_def = pe.Constraint(rule = Total_cost_rule, doc = '')
+        self.m.Total_cost_def = pe.Constraint(rule = Total_cost_rule,
+                                              doc = 'Definition of the total cost model objective function')
         
         def Total_carbon_rule(m):
             return m.Total_carbon == sum(m.Carbon_factors[inp] * m.P[t,inp] * m.Number_of_days[t] for t in m.Time for inp in m.Inputs)
-        self.m.Total_carbon_def = pe.Constraint(rule = Total_carbon_rule, doc = '')
-
+        self.m.Total_carbon_def = pe.Constraint(rule = Total_carbon_rule,
+                                                doc = 'Definition of the total carbon emissions model objective function')
         
+        # Carbon constraint
+        # -----------------
+        
+        def Carbon_constraint_rule(m):
+            return m.Total_carbon <= m.epsilon
+        self.m.Carbon_constraint = pe.Constraint(rule = Carbon_constraint_rule,
+                                                 doc = 'Constraint setting an upper limit to the total carbon emissions of the system')
+
+        # Objective functions
+        # ===================
+        
+        # Cost objective
+        # --------------
+        def cost_obj_rule(m):
+            return m.Total_cost
+        self.m.Cost_obj = pe.Objective(rule = cost_obj_rule, sense = pe.minimize)
+        
+        # Carbon objective
+        # ----------------
+        def carbon_obj_rule(m):
+            return m.Total_carbon
+        self.m.Carbon_obj = pe.Objective(rule = carbon_obj_rule, sense = pe.minimize)
         
     def solve(self):
         """Solve the model"""
         solver = pyomo.opt.SolverFactory('gurobi')
-        # results = solver.solve(self.m, tee=True, keepfiles=False, options_str="mip_tolerances_integrality=1e-9 mip_tolerances_mipgap=0")
         
-        # if (results.solver.status != pyomo.opt.SolverStatus.ok):
-            # logging.warning('Check solver not ok?')
-        # if (results.solver.termination_condition != pyomo.opt.TerminationCondition.optimal):  
-            # logging.warning('Check solver optimality?') 
+        # Cost minimization
+        # -----------------
+        self.m.Carbon_obj.deactivate()
+        solver.solve(self.m, tee=True, keepfiles=False, options_str="mip_tolerances_integrality=1e-9 mip_tolerances_mipgap=0")
+        carb_max = value(self.m.Total_carbon)
+        
+        # Save results
+        
+        # Carbon minimization
+        # -------------------
+        self.m.Carbon_obj.activate()
+        self.m.Cost_obj.deactivate()
+        solver.solve(self.m, tee=True, keepfiles=False, options_str="mip_tolerances_integrality=1e-9 mip_tolerances_mipgap=0")
+        carb_min = value(self.m.Total_carbon)
+        
+        # Save results
+        
+        # Pareto points
+        # -------------
+        if self.m.num_of_pfp != 0
+            self.m.Carbon_obj.activate()
+            self.m.Cost_obj.deactivate()
+        
+            interval = (carb_max - carb_min) / (self.num_of_pfp + 1)
+            steps = list(range())
+        
+            for i in range(1, num_of_pfp-2+1):
+                self.m.epsilon = 1
+                solver.solve(self.m, tee=True, keepfiles=False, options_str="mip_tolerances_integrality=1e-9 mip_tolerances_mipgap=0")
+        
+        # Save results
         
 if __name__ == '__main__':
-       sp = EnergyHub('Firstscript', 10) 
+       sp = EnergyHub('Input_data', 10) 
        sp.solve()
