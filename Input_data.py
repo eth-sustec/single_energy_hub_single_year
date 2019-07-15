@@ -2,46 +2,57 @@
 """
 Created on Wed Jun 26 18:17:22 2019
 
-@author: gmavroma
+@author: Georgios Mavromatidis (ETH Zurich, gmavroma@ethz.ch)
 """
 
 import pandas as pd
-import numpy as np
+# import numpy as np
 
 # Defining input values for model sets
 # ====================================
-Number_of_time_steps = 288
+Number_of_time_steps = 336
 Time = list(range(1, Number_of_time_steps+1))
 First_hour = list(range(1, Number_of_time_steps+1, 24))
-Inputs = ['Grid', 'PV', 'ASHP', 'GSHP', 'Gas_Boiler', 'Bio_Boiler', 'Oil_Boiler', 'CHP']
-Solar_inputs = ['PV']
+Number_of_buildings = 10
+Solar_pv_inputs = ['PV' + str(b) for b in range(1, Number_of_buildings+1)]
+Solar_th_inputs = ['ST' + str(b) for b in range(1, Number_of_buildings+1)]
+Dispatchable_Tech = ['ASHP', 'GSHP', 'Gas_Boiler', 'Bio_Boiler', 'Oil_Boiler', 'CHP']
+Inputs = ['Grid'] + Dispatchable_Tech + Solar_pv_inputs + Solar_th_inputs
 Inputs_wo_grid = Inputs.copy()
 Inputs_wo_grid.remove('Grid')
-Dispatchable_Tech = ['ASHP', 'GSHP', 'Gas_Boiler', 'Bio_Boiler', 'Oil_Boiler', 'CHP']
 CHP_Tech = ['CHP']
 Outputs = ['Heat', 'Elec']
 
 # Defining input values for model parameters
 # ==========================================
-Loads = pd.read_excel('Loads.xlsx', index_col=None, header=None)    # Read from some Excel/.csv file
-Loads.index = range(1, 289)
+Loads = pd.read_excel('Time_series_inputs.xlsx', usecols = "A:B", index_col=None, header=None)    # Read from some Excel/.csv file
+Loads.index = range(1, Number_of_time_steps + 1)
 Loads.columns = ['Heat','Elec']
 Loads = Loads.stack().to_dict()
 
-Number_of_days = list(np.repeat(2, 288))
-P_solar = 1
+Number_of_days = pd.read_excel('Time_series_inputs.xlsx', usecols = "C", index_col=None, header=None)    # Read from some Excel/.csv file
+Number_of_days.index = range(1, Number_of_time_steps + 1)
+Number_of_days.columns = ['Number_of_days']
+Number_of_days = Number_of_days.to_dict()
+Number_of_days = Number_of_days['Number_of_days']
+
+P_solar = pd.read_excel('Time_series_inputs.xlsx', usecols = "D:M", index_col=None, header=None)    # Read from some Excel/.csv file
+P_solar.index = range(1, Number_of_time_steps + 1)
+P_solar.columns = [i for i in range(1, Number_of_buildings+1)]
+P_solar = P_solar.stack().to_dict()
 
 Network_efficiency = 0.80
 Network_length = 200
 Network_lifetime = 50
 Net_inv_cost_per_m = 800
-Roof_area = 200
+Roof_area = [265,21,227,162,162,215,50,50,94,14]
 
 # Generation technologies
 # -----------------------
 # Operating_costs, Linear_inv_costs, Fixed_inv_costs, Carbon_factors, Lifetime_tech
 gen_tech = {'Grid'       : [0.0256, 0, 0, 0.0095, 20], 
-            'PV'         : [0.0, 300, 5750, 0, 20], 
+            'PV1'         : [0.0, 300, 5750, 0, 20], 
+            'ST1'         : [0.0, 300, 5750, 0, 20],            
             'ASHP'       : [0.0, 1530, 6830, 0, 20], 
             'GSHP'       : [0.0, 2170, 9070, 0, 20], 
             'Gas_Boiler' : [0.113, 640, 11920, 0.198, 20], 
@@ -49,6 +60,8 @@ gen_tech = {'Grid'       : [0.0256, 0, 0, 0.0095, 20],
             'Oil_Boiler' : [0.106, 540, 15890, 0.265, 20], 
             'CHP'        : [0.113, 3100, 43450, 0.198, 20]
         }
+gen_tech.update({key: gen_tech['PV1'] for key in ['PV' + str(i) for i in range(2, Number_of_buildings+1)]})
+gen_tech.update({key: gen_tech['ST1'] for key in ['ST' + str(i) for i in range(2, Number_of_buildings+1)]})
 
 Operating_costs = {key: gen_tech[key][0] for key in gen_tech.keys()}
 Linear_inv_costs = {key: gen_tech[key][1] for key in gen_tech.keys()}
@@ -61,7 +74,8 @@ Interest_rate = 0.04
 
 Cmatrix = {
         ('Elec', 'Grid')      : 1.0,
-        ('Elec', 'PV')        : 0.15,
+        ('Elec', 'PV1')        : 0.15,
+        ('Heat', 'ST1')        : 0.35,
         ('Heat','ASHP')       : 3.0,
         ('Elec', 'ASHP')      : -1.0,
         ('Heat','GSHP')       : 4.0,
@@ -72,10 +86,12 @@ Cmatrix = {
         ('Heat','CHP')        : 0.8,
         ('Elec','CHP')        : 0.8
         }
+Cmatrix.update({key: Cmatrix[('Elec', 'PV1')] for key in [('Elec','PV' + str(i)) for i in range(2, Number_of_buildings+1)]})
+Cmatrix.update({key: Cmatrix[('Heat', 'ST1')] for key in [('Heat', 'ST' + str(i)) for i in range(2, Number_of_buildings+1)]})
 
 
 # Linear_stor_costs, Fixed_stor_costs, Storage_max_charge, Storage_max_discharge, Storage_standing_losses, Storage_charging_eff, 
-# Storage_discharging_eff, Storage_max_cap, Lifetime_stor
+# Storage_discharging_eff, Storage_max_cap, Lifetime_stor 
 stor_tech = {'Heat' : [12.5, 1685, 0.25, 0.25, 0.01, 0.90, 0.90, 100, 20],
              'Elec' : [2000, 0, 0.25, 0.25, 0.001, 0.90, 0.90, 100, 20]
              }
