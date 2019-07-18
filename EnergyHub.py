@@ -6,19 +6,28 @@ Created on Wed Jun 26 13:45:26 2019
 """
 
 import pyomo
-# import pandas as pd
 import pyomo.opt
 import pyomo.environ as pe
+# import pyomoio as pyio
+from pyomo.opt import SolverResults
+
+# import pandas as pd
+import numpy as np
 
 class EnergyHub:
     """This class implements a standard energy hub model for the optimal design and operation of distributed multi-energy systems"""
     
-    def __init__(self, input_file, num_of_pareto_points):
+    def __init__(self, input_file, optim_mode = 3, num_of_pareto_points = 5):
         """ Read in the input data"""
         import importlib
         self.InputFile = input_file
         self.inp = importlib.import_module(self.InputFile)
-        self.num_of_pfp = num_of_pareto_points
+        self.optim_mode = optim_mode
+        if self.optim_mode == 1 or self.optim_mode == 2:
+            self.m.num_of_pfp == 0
+            print('Warning: Number of Pareto front points specified is ignored. Single-objective optimization is performed')
+        else:
+            self.num_of_pfp = num_of_pareto_points
         self.createModel()
 
     
@@ -40,7 +49,6 @@ class EnergyHub:
         self.m.CHP_Tech = pe.Set(initialize = self.inp.CHP_Tech, within = self.m.Inputs, doc = 'Subset of CHP engine technologies')
         self.m.Outputs = pe.Set(initialize = self.inp.Outputs, doc = 'Types of energy demands that the energy hub must supply')
         
-
         # Model parameters
         # ================
         
@@ -61,9 +69,9 @@ class EnergyHub:
         self.m.Lifetime_tech = pe.Param(self.m.Inputs, initialize = self.inp.Lifetime_tech, doc = 'Lifetime of energy generation technologies')
         self.m.Lifetime_stor = pe.Param(self.m.Outputs, initialize = self.inp.Lifetime_stor, doc = 'Lifetime of energy storage technologies')
         self.m.Network_efficiency = pe.Param(self.m.Outputs, initialize = self.inp.Network_efficiency, doc = 'The efficiency of the energy networks used by the energy hub')
-        self.m.Network_length = pe.Param(self.m.Outputs, initialize = self.inp.Network_length, doc = 'The length of the thermal network for the energy hub')
+        self.m.Network_length = pe.Param(initialize = self.inp.Network_length, doc = 'The length of the thermal network for the energy hub')
         self.m.Network_lifetime = pe.Param(initialize = self.inp.Network_lifetime, doc = 'The lifetime of the thermal network used by the energy hub')              
-                
+
         # Cost parameters
         # ---------------
         self.m.Operating_costs = pe.Param(self.m.Inputs, initialize = self.inp.Operating_costs, doc = 'Energy carrier costs at the input of the energy hub')
@@ -71,23 +79,23 @@ class EnergyHub:
         self.m.Fixed_inv_costs = pe.Param(self.m.Inputs, initialize = self.inp.Fixed_inv_costs, doc = 'Fixed part of the investment cost (per kW or m2) for the generation technologies in the energy hub')
         self.m.Linear_stor_costs = pe.Param(self.m.Outputs, initialize = self.inp.Linear_stor_costs, doc = 'Linear part of the investment cost (per kWh) for the storage technologies in the energy hub')
         self.m.Fixed_stor_costs = pe.Param(self.m.Outputs, initialize = self.inp.Fixed_stor_costs, doc = 'Fixed part of the investment cost (per kWh) for the storage technologies in the energy hub')
-        self.m.Net_inv_cost_per_m = pe.Param(initialize = self.inp.Net_inv_cost_per_m, doc = 'Investment cost per pipe m of the themral network of the energy hub')
+        self.m.Network_inv_cost_per_m = pe.Param(initialize = self.inp.Network_inv_cost_per_m, doc = 'Investment cost per pipe m of the themral network of the energy hub')
         self.m.FiT = pe.Param(self.m.Outputs, initialize = self.inp.FiT, doc = 'Feed-in tariffs for exporting electricity back to the grid')
         self.m.Interest_rate = pe.Param(initialize = self.inp.Interest_rate, doc = 'The interest rate used for the CRF calculation')
-        self.m.CRF_tech = pe.Param(self.m.Inputs, doc = 'Capital Recovery Factor (CRF) used to annualise the investment cost of generation technologies')
-        self.m.CRF_stor = pe.Param(self.m.Inputs, doc = 'Capital Recovery Factor (CRF) used to annualise the investment cost of storage technologies')
-        self.m.CRF_network = pe.Param(doc = 'Capital Recovery Factor (CRF) used to annualise the investment cost of the networks used by the energy hub')
+        self.m.CRF_tech = pe.Param(self.m.Inputs, initialize = self.inp.CRF_tech, doc = 'Capital Recovery Factor (CRF) used to annualise the investment cost of generation technologies')
+        self.m.CRF_stor = pe.Param(self.m.Outputs, initialize = self.inp.CRF_stor, doc = 'Capital Recovery Factor (CRF) used to annualise the investment cost of storage technologies')
+        self.m.CRF_network = pe.Param(initialize = self.inp.CRF_network, doc = 'Capital Recovery Factor (CRF) used to annualise the investment cost of the networks used by the energy hub')
         
         # Environmental parameters
         # ------------------------
         self.m.Carbon_factors = pe.Param(self.m.Inputs, initialize = self.inp.Carbon_factors, doc = 'Energy carrier CO2 emission factors')
-        self.m.epsilon = pe.Param(initialize = 10^8, mutable = True, doc = 'Epsilon value used for the multi-objective epsilon-constrained optimization')
+        self.m.epsilon = pe.Param(initialize = 10**8, mutable = True, doc = 'Epsilon value used for the multi-objective epsilon-constrained optimization')
         
         # Misc parameters
         # ---------------
         self.m.Roof_area = pe.Param(self.m.Buildings, initialize = self.inp.Roof_area, doc = 'Available roof area for the installation of solar technologies')
         self.m.P_solar = pe.Param(self.m.Time, self.m.Buildings, initialize = self.inp.P_solar, doc = 'Incoming solar radiation patterns (kWh/m2) for solar technologies')
-        self.m.BigM = pe.Param(default = 10^5, doc = 'Big M: Sufficiently large value')
+        self.m.BigM = pe.Param(default = 10**5, doc = 'Big M: Sufficiently large value')
         
     
         # Model variables
@@ -96,12 +104,11 @@ class EnergyHub:
         # Generation technologies
         # -----------------------
         self.m.P = pe.Var(self.m.Time, self.m.Inputs, within = pe.NonNegativeReals, doc = 'The input energy stream at each generation device of the energy hub at each time step')
-        self.m.P_export = pe.Var(self.m.Time, self.m.Outputs, within = pe.NonNegativeReals,
-                         doc = 'Exported energy (in this case only electricity exports are allowed)')                
+        self.m.P_export = pe.Var(self.m.Time, self.m.Outputs, within = pe.NonNegativeReals, doc = 'Exported energy (in this case only electricity exports are allowed)')    
+        self.m.y = pe.Var(self.m.Inputs, within = pe.Binary, doc = 'Binary variable denoting the installation (=1) of energy generation technology')
+        self.m.Capacity = pe.Var(self.m.Inputs, within = pe.NonNegativeReals, doc = 'Installed capacity for energy generation technology')         
 #        self.m.P_export = pe.Var(((t, out) for t in self.m.Time for out in self.m.Outputs if out == 'Elec'), within = pe.NonNegativeReals,
 #                                 doc = 'Exported energy (in this case only electricity exports are allowed)')
-        self.m.y = pe.Var(self.m.Inputs, within = pe.Binary, doc = 'Binary variable denoting the installation (=1) of energy generation technology')
-        self.m.Capacity = pe.Var(self.m.Inputs, within = pe.NonNegativeReals, doc = 'Installed capacity for energy generation technology')
 #        self.m.Capacity= pe.Var((out,inp) for out in self.m.Outputs for inp in self.m.Inputs if self.m.Cmatrix[out,inp] > 0, within = pe.NonNegativeReals,
 #                                doc = 'Installed capacity for energy generation technology')
         
@@ -127,8 +134,13 @@ class EnergyHub:
         # Energy demand balances
         # ----------------------
         def Load_balance_rule (m, t, out):
-            return sum(m.P[t,inp] * m.Cmatrix[out,inp] for inp in m.Inputs) + m.Qout[t,out] - m.Qin[t,out] == m.Loads[t,out] + m.P_export[t,out]
+            return sum(m.P[t,inp] * m.Cmatrix[out,inp] for inp in m.Inputs) + m.Qout[t,out] - m.Qin[t,out] == m.Loads[t,out] / m.Network_efficiency[out] + m.P_export[t,out]
         self.m.Load_balance = pe.Constraint(self.m.Time, self.m.Outputs, rule = Load_balance_rule)
+        
+        def No_heat_export_rule(m, t, out):
+            return m.P_export[t,out] == 0
+        self.m.No_heat_export = pe.Constraint(((t, out) for t in self.m.Time for out in self.m.Outputs if out == 'Heat'), rule = No_heat_export_rule,
+                                             doc = 'No heat exports allowed')
         
         # Generation constraints
         # ----------------------
@@ -159,7 +171,7 @@ class EnergyHub:
                                                  doc = 'Constraint for the formulation of the fixed cost in the objective function')
         
         def Roof_area_non_violation_rule(m, sol_pv, sol_st, bldg):
-            return m.Capacity[sol_pv] + m.Capacity[sol_st] <= 100# m.Roof_area[bldg]
+            return m.Capacity[sol_pv] + m.Capacity[sol_st] <= m.Roof_area[bldg]
         self.m.Roof_area_non_violation = pe.Constraint(((pv, st, bldg) for i, pv in enumerate(self.m.Solar_pv_inputs) 
                                                                        for j, st in enumerate(self.m.Solar_th_inputs)
                                                                        for k, bldg in enumerate(self.m.Buildings) if i == j == k),
@@ -171,12 +183,12 @@ class EnergyHub:
         # -------------------
         
         def Storage_balance_rule(m, t, out):
-            return m.E[t,out] == m.Storage_standing_losses[out] * m.E[t-1,out] + m.Storage_charging_eff[out] * m.Qin[t,out] - (1 / m.Storage_discharging_eff[out]) * m.Qout[t,out]
+            return m.E[t,out] == (1 - m.Storage_standing_losses[out]) * m.E[t-1,out] + m.Storage_charging_eff[out] * m.Qin[t,out] - (1 / m.Storage_discharging_eff[out]) * m.Qout[t,out]
         self.m.Storage_balance = pe.Constraint(self.m.Time - self.m.First_hour, self.m.Outputs, rule = Storage_balance_rule,
                                                doc = 'Energy balance for the storage modules considering incoming and outgoing energy flows')
         
         def Storage_balance_rule2(m, t, out):
-            return m.E[t,out] == m.Storage_standing_losses[out] * m.E[t+23,out] + m.Storage_charging_eff[out] * m.Qin[t,out] - (1 / m.Storage_discharging_eff[out]) * m.Qout[t,out]
+            return m.E[t,out] == (1 - m.Storage_standing_losses[out]) * m.E[t+23,out] + m.Storage_charging_eff[out] * m.Qin[t,out] - (1 / m.Storage_discharging_eff[out]) * m.Qout[t,out]
         self.m.Storage_balance2 = pe.Constraint(self.m.First_hour, self.m.Outputs, rule = Storage_balance_rule2,
                                                 doc = 'Energy balance for the storage modules considering incoming and outgoing energy flows')
         
@@ -219,7 +231,9 @@ class EnergyHub:
                                                       doc = 'Definition of the income due to electricity exports component of the total energy system cost')
         
         def Investment_cost_rule(m):
-            return m.Investment_cost == sum(m.Operating_costs[inp] * m.P[t,inp] * m.Number_of_days[t] for t in m.Time for inp in m.Inputs)
+            return m.Investment_cost == sum((m.Fixed_inv_costs[inp] * m.y[inp] + m.Linear_inv_costs[inp] * m.Capacity[inp]) * m.CRF_tech[inp] for inp in m.Inputs) \
+                                            + sum((m.Fixed_stor_costs[out] * m.y_stor[out] + m.Linear_stor_costs[out] * m.Storage_cap[out]) * m.CRF_stor[out] for out in m.Outputs) \
+                                            + m.Network_inv_cost_per_m * m.Network_length * m.CRF_network
         self.m.Investment_cost_def = pe.Constraint(rule = Investment_cost_rule,
                                                    doc = 'Definition of the investment cost component of the total energy system cost')
         
@@ -256,42 +270,109 @@ class EnergyHub:
             return m.Total_carbon
         self.m.Carbon_obj = pe.Objective(rule = carbon_obj_rule, sense = pe.minimize)
         
-    def solve(self):
+    
+    
+    def solve(self, mode):
         """Solve the model"""
         solver = pyomo.opt.SolverFactory('gurobi')
         
-        # Cost minimization
-        # -----------------
-        self.m.Carbon_obj.deactivate()
-        solver.solve(self.m, tee=True, keepfiles=False, options_str="mip_tolerances_integrality=1e-9 mip_tolerances_mipgap=0")
-        carb_max = value(self.m.Total_carbon)
+        if self.num_of_pfp != 0:
+            self.m.results = [None] * (self.num_of_pfp+2)
+        else:
+            self.m.results = [None] * 2
         
-        # Save results
+        if self.optim_mode == 1:            
+            
+            # Cost minimization
+            # -----------------
+            self.m.Carbon_obj.deactivate()
+            solver.solve(self.m, tee=False, keepfiles=False)
+            # Save results
+            self.m.results[0] = self.m.clone()
         
-        # Carbon minimization
-        # -------------------
-        self.m.Carbon_obj.activate()
-        self.m.Cost_obj.deactivate()
-        solver.solve(self.m, tee=True, keepfiles=False, options_str="mip_tolerances_integrality=1e-9 mip_tolerances_mipgap=0")
-        carb_min = value(self.m.Total_carbon)
-        
-        # Save results
-        
-        # Pareto points
-        # -------------
-        if self.m.num_of_pfp != 0
+        else if self.optim_mode == 2:
+            
+            # Carbon minimization
+            # -------------------
             self.m.Carbon_obj.activate()
             self.m.Cost_obj.deactivate()
+            solver.solve(self.m, tee=False, keepfiles=False)
+            carb_min = pe.value(self.m.Total_carbon)
+            
+            self.m.epsilon = carb_min         
+            self.m.Carbon_obj.deactivate()
+            self.m.Cost_obj.activate()
+            solver.solve(self.m, tee=False, keepfiles=False)
+            # Save results
+            self.m.results[0] = self.m.clone()
+
+        else:
+
+            # Cost minimization
+            # -----------------
+            self.m.Carbon_obj.deactivate()
+            solver.solve(self.m, tee=False, keepfiles=False)
+            self.m.results[0] = self.m.clone()
+            carb_min = pe.value(self.m.Total_carbon)
+            # Save results
+            self.m.results[0] = self.m.clone()
+            
+            # Carbon minimization
+            # -------------------
+            self.m.Carbon_obj.activate()
+            self.m.Cost_obj.deactivate()
+            solver.solve(self.m, tee=False, keepfiles=False)
+            carb_min = pe.value(self.m.Total_carbon)
+            
+            # Pareto points
+            # -------------
+            if self.num_of_pfp != 0:
+                self.m.Carbon_obj.deactivate()
+                self.m.Cost_obj.activate()
+            
+                interval = (carb_max - carb_min) / (self.num_of_pfp + 1)
+                steps = list(np.arange(carb_min, carb_max, interval))
+                steps.reverse()
+                print(steps)
+            
+                for i in range(1, self.num_of_pfp+1+1):
+                    self.m.epsilon = steps[i-1]
+                    print(self.m.epsilon.extract_values())
+                    solver.solve(self.m, tee=False, keepfiles=False)
+                    # Save results
+                    self.m.results[i] = self.m.clone()
+            else:
+                # Cost minimization
+                # -----------------
+                self.m.Carbon_obj.deactivate()
+                solver.solve(self.m, tee=False, keepfiles=False)
+                # Save results
+                self.m.results[0] = self.m.clone()
+                
+                # Carbon minimization
+                # -------------------
+                self.m.Carbon_obj.activate()
+                self.m.Cost_obj.deactivate()
+                solver.solve(self.m, tee=False, keepfiles=False)
+                carb_min = pe.value(self.m.Total_carbon)
+                
+                self.m.epsilon = carb_min         
+                self.m.Carbon_obj.deactivate()
+                self.m.Cost_obj.activate()
+                solver.solve(self.m, tee=False, keepfiles=False)
+                # Save results
+                self.m.results[1] = self.m.clone()
+
+
         
-            interval = (carb_max - carb_min) / (self.num_of_pfp + 1)
-            steps = list(range())
         
-            for i in range(1, num_of_pfp-2+1):
-                self.m.epsilon = 1
-                solver.solve(self.m, tee=True, keepfiles=False, options_str="mip_tolerances_integrality=1e-9 mip_tolerances_mipgap=0")
         
-        # Save results
+        
+        
+        
+                
+                
         
 if __name__ == '__main__':
-       sp = EnergyHub('Input_data', 10) 
+       sp = EnergyHub('Input_data', 1) 
        sp.solve()
