@@ -8,10 +8,10 @@ Created on Wed Jun 26 13:45:26 2019
 import pyomo
 import pyomo.opt
 import pyomo.environ as pe
-# import pyomoio as pyio
+import pyomoio as pyio
 from pyomo.opt import SolverResults
 
-# import pandas as pd
+import pandas as pd
 import numpy as np
 
 class EnergyHub:
@@ -24,8 +24,8 @@ class EnergyHub:
         self.inp = importlib.import_module(self.InputFile)
         self.optim_mode = optim_mode
         if self.optim_mode == 1 or self.optim_mode == 2:
-            self.m.num_of_pfp == 0
-            print('Warning: Number of Pareto front points specified is ignored. Single-objective optimization is performed')
+            self.num_of_pfp = 0
+            print('Warning: Number of Pareto front points specified is ignored. Single-objective optimization will be performed.')
         else:
             self.num_of_pfp = num_of_pareto_points
         self.createModel()
@@ -272,28 +272,50 @@ class EnergyHub:
         
     
     
-    def solve(self, mode):
-        """Solve the model"""
+    def solve(self):
+        """Solves the model and outputs results"""
         solver = pyomo.opt.SolverFactory('gurobi')
         
-        if self.num_of_pfp != 0:
-            self.m.results = [None] * (self.num_of_pfp+2)
-        else:
-            self.m.results = [None] * 2
+        def get_design_results(model_instance):
+            dsgn1 = pyio.get_entity(model_instance, 'Capacity')
+            dsgn2 = pyio.get_entity(model_instance, 'Storage_cap')
+            dsgn = pd.concat([dsgn1, dsgn2])
+            dsgn = pd.DataFrame(dsgn)
+            dsgn = dsgn.T
+            return dsgn
         
+        def get_oper_results(model_instance):
+            oper1 = pyio.get_entities(model_instance, 'P').unstack()
+            oper2 = pyio.get_entities(model_instance, ['P_export','Qin', 'Qout','E']).unstack()
+            oper = pd.merge(oper1, oper2, left_index=True, right_index=True)
+            return oper
+        
+        def get_obj_results(model_instance):
+            obj = pyio.get_entities(model_instance, ['Total_cost', 'Investment_cost','Operating_cost','Income_via_exports','Total_carbon'])
+            return obj
+
+                
         if self.optim_mode == 1:            
             
             # Cost minimization
             # -----------------
+            self.results = [None]
+            
             self.m.Carbon_obj.deactivate()
             solver.solve(self.m, tee=False, keepfiles=False)
+            
             # Save results
-            self.m.results[0] = self.m.clone()
+            self.results[0] = self.m.clone()
+            obj = get_obj_results(self.m)
+            dsgn = get_design_results(self.m)
+            oper = get_oper_results(self.m)
         
-        else if self.optim_mode == 2:
+        elif self.optim_mode == 2:
             
             # Carbon minimization
             # -------------------
+            self.results = [None]
+            
             self.m.Carbon_obj.activate()
             self.m.Cost_obj.deactivate()
             solver.solve(self.m, tee=False, keepfiles=False)
@@ -303,19 +325,35 @@ class EnergyHub:
             self.m.Carbon_obj.deactivate()
             self.m.Cost_obj.activate()
             solver.solve(self.m, tee=False, keepfiles=False)
+            
             # Save results
-            self.m.results[0] = self.m.clone()
+            self.results[0] = self.m.clone()
+            obj = get_obj_results(self.m)
+            dsgn = get_design_results(self.m)
+            oper = get_oper_results(self.m)
 
         else:
+            
+            if self.num_of_pfp != 0:
+                self.results = [None] * (self.num_of_pfp+2)
+                oper = [None] * (self.num_of_pfp+2)
+            else:
+                self.results = [None] * 2
+                oper = [None] * 2
 
             # Cost minimization
             # -----------------
             self.m.Carbon_obj.deactivate()
             solver.solve(self.m, tee=False, keepfiles=False)
-            self.m.results[0] = self.m.clone()
-            carb_min = pe.value(self.m.Total_carbon)
+            self.results[0] = self.m.clone()
+            carb_max = pe.value(self.m.Total_carbon)
+            
             # Save results
-            self.m.results[0] = self.m.clone()
+            self.results[0] = self.m.clone()
+            obj = get_obj_results(self.m)
+            dsgn = get_design_results(self.m)
+            oper[0] = get_oper_results(self.m)
+            oper[0].index.name = 'Time'
             
             # Carbon minimization
             # -------------------
@@ -339,40 +377,49 @@ class EnergyHub:
                     self.m.epsilon = steps[i-1]
                     print(self.m.epsilon.extract_values())
                     solver.solve(self.m, tee=False, keepfiles=False)
+                    
                     # Save results
-                    self.m.results[i] = self.m.clone()
-            else:
-                # Cost minimization
-                # -----------------
-                self.m.Carbon_obj.deactivate()
-                solver.solve(self.m, tee=False, keepfiles=False)
-                # Save results
-                self.m.results[0] = self.m.clone()
-                
-                # Carbon minimization
-                # -------------------
-                self.m.Carbon_obj.activate()
-                self.m.Cost_obj.deactivate()
-                solver.solve(self.m, tee=False, keepfiles=False)
-                carb_min = pe.value(self.m.Total_carbon)
-                
+                    self.results[i] = self.m.clone()
+                    obj = pd.concat([obj, get_obj_results(self.m)])
+                    dsgn = pd.concat([dsgn, get_design_results(self.m)])
+                    oper[i] = get_oper_results(self.m)
+                    oper[i].index.name = 'Time'
+            else:               
                 self.m.epsilon = carb_min         
                 self.m.Carbon_obj.deactivate()
                 self.m.Cost_obj.activate()
                 solver.solve(self.m, tee=False, keepfiles=False)
-                # Save results
-                self.m.results[1] = self.m.clone()
-
-
-        
-        
-        
-        
-        
-        
                 
+                # Save results
+                self.results[1] = self.m.clone()
+                obj = pd.concat([obj, get_obj_results(self.m)])
+                dsgn = pd.concat([dsgn, get_design_results(self.m)])
+                oper[1] = get_oper_results(self.m)
+                oper[1].index.name = 'Time'
+        
+        
+        # Beautification
+        # --------------        
+        obj.index.name = 'Pareto front points'
+        dsgn.rename(columns = {'Heat':'Heat stor', 'Elec':'Elec stor'}, inplace = True)
+        dsgn.index.name = 'Pareto front points'
+                
+        if self.optim_mode == 1:
+            obj.index = ['Min_cost']
+            dsgn.index = ['Min_cost']
+            oper.index = 'Time'
+        elif self.optim_mode == 2:
+            obj.index = ['Min_carb']
+            dsgn.index = ['Min_carb']
+            oper.index = 'Time'
+        else:
+            obj.index = ['Min_cost']+ ["PFP" + str(i) for i in range(2, self.num_of_pfp+1+1)]+['Min_carb']
+            dsgn.index = ['Min_cost']+ ["PFP" + str(i) for i in range(2, self.num_of_pfp+1+1)]+['Min_carb']
+        
+        
+        return obj, dsgn, oper
                 
         
 if __name__ == '__main__':
-       sp = EnergyHub('Input_data', 1) 
+       sp = EnergyHub('Input_data', 3, 5) 
        sp.solve()
