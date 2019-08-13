@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Jun 26 13:45:26 2019
+Single energy hub - single stage model for the optimal design of a distributed energy system
 
 @author: Georgios Mavromatidis (ETH Zurich, gmavroma@ethz.ch)
+
 """
 
 import pyomo
@@ -439,5 +440,5 @@ class EnergyHub:
                 
         
 if __name__ == '__main__':
-       sp = EnergyHub('Input_data', 3, 5) 
+       sp = EnergyHub('Input_data', 3, 5)
        (obj, dsgn, oper) = sp.solve()
