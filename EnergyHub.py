@@ -18,7 +18,15 @@ class EnergyHub:
     """This class implements a standard energy hub model for the optimal design and operation of distributed multi-energy systems"""
     
     def __init__(self, input_file, optim_mode = 3, num_of_pareto_points = 5):
-        """ Read in the input data"""
+        """
+        __init__ function to read in the input data and begin the model creation process
+        
+        Inputs to the function:
+        -----------------------    
+            * input_file: .py file where the values for all model parameters are defined
+            * optim_mode (default = 3): 1: for cost minimization, 2: for carbon minimization, 3: for multi-objective optimization
+            * num_of_pareto_points (default = 5): In case optim_mode is set to 3, then this specifies the number of Pareto points        
+        """
         import importlib
         self.InputFile = input_file
         self.inp = importlib.import_module(self.InputFile)
@@ -32,7 +40,7 @@ class EnergyHub:
 
     
     def createModel(self):
-        """Create the Pyomo energy hub model given the input data"""
+        """Create the Pyomo energy hub model given the input data specified in the self.InputFile"""
        
         self.m = pe.ConcreteModel()
         
@@ -107,10 +115,10 @@ class EnergyHub:
         self.m.P_export = pe.Var(self.m.Time, self.m.Outputs, within = pe.NonNegativeReals, doc = 'Exported energy (in this case only electricity exports are allowed)')    
         self.m.y = pe.Var(self.m.Inputs, within = pe.Binary, doc = 'Binary variable denoting the installation (=1) of energy generation technology')
         self.m.Capacity = pe.Var(self.m.Inputs, within = pe.NonNegativeReals, doc = 'Installed capacity for energy generation technology')         
-#        self.m.P_export = pe.Var(((t, out) for t in self.m.Time for out in self.m.Outputs if out == 'Elec'), within = pe.NonNegativeReals,
-#                                 doc = 'Exported energy (in this case only electricity exports are allowed)')
-#        self.m.Capacity= pe.Var((out,inp) for out in self.m.Outputs for inp in self.m.Inputs if self.m.Cmatrix[out,inp] > 0, within = pe.NonNegativeReals,
-#                                doc = 'Installed capacity for energy generation technology')
+        # self.m.P_export = pe.Var(((t, out) for t in self.m.Time for out in self.m.Outputs if out == 'Elec'), within = pe.NonNegativeReals,
+        #                          doc = 'Exported energy (in this case only electricity exports are allowed)')
+        # self.m.Capacity= pe.Var((out,inp) for out in self.m.Outputs for inp in self.m.Inputs if self.m.Cmatrix[out,inp] > 0, within = pe.NonNegativeReals,
+        #                         doc = 'Installed capacity for energy generation technology')
         
         # Storage technologies
         # --------------------
@@ -273,7 +281,21 @@ class EnergyHub:
     
     
     def solve(self):
-        """Solves the model and outputs results"""
+        """
+        Solves the model and outputs model results
+        
+        Usage: 
+        ------
+            (obj, des, oper) = solve()
+        
+        Two types of model outputs are generated:
+            
+            1. All the model definitions, constraints, parameter and variable values are given for each objective/Pareto point in the self.results object.
+            2. The key objective function, design and operation results are given as follows:
+                * obj: Contains the total cost, cost breakdown, and total carbon results. It is a data frame for all optim_mode settings.
+                * dsgn: Contains the generation and storage capacities of all candidate technologies. It is a data frame for all optim_mode settings.
+                * oper: Contains the generation, export and storage energy flows for all time steps considered. It is a single dataframe when optim_mode is 1 or 2 (single-objective) and a list of dataframes for each Pareto point when optim_mode is set to 3 (multi-objective).
+        """
         solver = pyomo.opt.SolverFactory('gurobi')
         
         def get_design_results(model_instance):
@@ -334,12 +356,8 @@ class EnergyHub:
 
         else:
             
-            if self.num_of_pfp != 0:
-                self.results = [None] * (self.num_of_pfp+2)
-                oper = [None] * (self.num_of_pfp+2)
-            else:
-                self.results = [None] * 2
-                oper = [None] * 2
+            self.results = [None] * (self.num_of_pfp+2)
+            oper = [None] * (self.num_of_pfp+2)
 
             # Cost minimization
             # -----------------
@@ -422,4 +440,4 @@ class EnergyHub:
         
 if __name__ == '__main__':
        sp = EnergyHub('Input_data', 3, 5) 
-       sp.solve()
+       (obj, dsgn, oper) = sp.solve()
