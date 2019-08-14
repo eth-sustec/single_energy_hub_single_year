@@ -40,6 +40,6 @@ The final step is to solve the model and get the model results:
 (obj, dsgn, oper) = mod.solve()
 ```
 The key objective function, design and operation results are returned by the model using three objects:
-* obj: Contains the total cost, cost breakdown, and total carbon results. It is a data frame for all optim_mode settings.
-* dsgn: Contains the generation and storage capacities of all candidate technologies. It is a data frame for all optim_mode settings.
-* oper: Contains the generation, export and storage energy flows for all time steps considered. It is a single dataframe when optim_mode is 1 or 2 (single-objective) and a list of dataframes for each Pareto point when optim_mode is set to 3 (multi-objective).
+1. obj: Contains the total cost, cost breakdown, and total carbon results. It is a data frame for all optim_mode settings.
+2. dsgn: Contains the generation and storage capacities of all candidate technologies. It is a data frame for all optim_mode settings.
+3. oper: Contains the generation, export and storage energy flows for all time steps considered. It is a single dataframe when optim_mode is 1 or 2 (single-objective) and a list of dataframes for each Pareto point when optim_mode is set to 3 (multi-objective).
