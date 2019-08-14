@@ -26,7 +26,7 @@ import EnergyHub as eh
 Then, an `EnergyHub` object can be defined using the following inputs:
 
 1. A file specifying the values of the model parameters (the model formulation is decoupled from the attribution of parameter values)
-2. A parameter specifying the optimization objectives (1: total cost minimization, 2: CO<sub>2<\sub> minimization, 3: multi-objective optimization)
+2. A parameter specifying the optimization objectives (1: total cost minimization, 2: CO<sub>2</sub> minimization, 3: multi-objective optimization)
 3. A parameter specifying the number of Pareto points to be considered (only if multi-objective optimization is chosen)
   
 For instance:
