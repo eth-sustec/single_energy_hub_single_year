@@ -19,12 +19,7 @@ import numpy as np
 class EnergyHub:
     """This class implements a standard energy hub model for the optimal design and operation of distributed multi-energy systems"""
 
-    def __init__(
-        self,
-        input_file,
-        optim_mode=3,
-        num_of_pareto_points=5,
-    ):
+    def __init__(self, input_file, optim_mode=3, num_of_pareto_points=5):
         """
         __init__ function to read in the input data and begin the model creation process
 
@@ -56,8 +51,7 @@ class EnergyHub:
         # Model sets
         # ==========
         self.m.Time = pe.Set(
-            initialize=self.inp.Time,
-            doc="Time steps considered in the model",
+            initialize=self.inp.Time, doc="Time steps considered in the model"
         )
         self.m.First_hour = pe.Set(
             initialize=self.inp.First_hour,
@@ -265,10 +259,7 @@ class EnergyHub:
             initialize=self.inp.P_solar,
             doc="Incoming solar radiation patterns (kWh/m2) for solar technologies",
         )
-        self.m.BigM = pe.Param(
-            default=10 ** 5,
-            doc="Big M: Sufficiently large value",
-        )
+        self.m.BigM = pe.Param(default=10 ** 5, doc="Big M: Sufficiently large value")
 
         # Model variables
         # ===============
@@ -340,8 +331,7 @@ class EnergyHub:
             doc="The operating cost for the consumption of energy carriers",
         )
         self.m.Income_via_exports = pe.Var(
-            within=pe.NonNegativeReals,
-            doc="Total income due to exported electricity",
+            within=pe.NonNegativeReals, doc="Total income due to exported electricity"
         )
         self.m.Investment_cost = pe.Var(
             within=pe.NonNegativeReals,
@@ -363,33 +353,21 @@ class EnergyHub:
         # ----------------------
         def Load_balance_rule(m, t, out):
             return (
-                sum(
-                    m.P[t, inp] * m.Cmatrix[out, inp]
-                    for inp in m.Inputs
-                )
+                sum(m.P[t, inp] * m.Cmatrix[out, inp] for inp in m.Inputs)
                 + m.Qout[t, out]
                 - m.Qin[t, out]
-                == m.Loads[t, out]
-                / m.Network_efficiency[out]
-                + m.P_export[t, out]
+                == m.Loads[t, out] / m.Network_efficiency[out] + m.P_export[t, out]
             )
 
         self.m.Load_balance = pe.Constraint(
-            self.m.Time,
-            self.m.Outputs,
-            rule=Load_balance_rule,
+            self.m.Time, self.m.Outputs, rule=Load_balance_rule
         )
 
         def No_heat_export_rule(m, t, out):
             return m.P_export[t, out] == 0
 
         self.m.No_heat_export = pe.Constraint(
-            (
-                (t, out)
-                for t in self.m.Time
-                for out in self.m.Outputs
-                if out == "Heat"
-            ),
+            ((t, out) for t in self.m.Time for out in self.m.Outputs if out == "Heat"),
             rule=No_heat_export_rule,
             doc="No heat exports allowed",
         )
@@ -397,10 +375,7 @@ class EnergyHub:
         # Generation constraints
         # ----------------------
         def Capacity_constraint_rule(m, t, disp, out):
-            return (
-                m.P[t, disp] * m.Cmatrix[out, disp]
-                <= m.Capacity[disp]
-            )
+            return m.P[t, disp] * m.Cmatrix[out, disp] <= m.Capacity[disp]
 
         self.m.Capacity_constraint = pe.Constraint(
             self.m.Time,
@@ -411,18 +386,13 @@ class EnergyHub:
         )
 
         def Solar_pv_input_rule(m, t, sol_pv, bldg):
-            return (
-                m.P[t, sol_pv]
-                == m.P_solar[t, bldg] * m.Capacity[sol_pv]
-            )
+            return m.P[t, sol_pv] == m.P_solar[t, bldg] * m.Capacity[sol_pv]
 
         self.m.Solar_pv_input = pe.Constraint(
             (
                 (t, sol_pv, bldg)
                 for t in self.m.Time
-                for i, sol_pv in enumerate(
-                    self.m.Solar_pv_inputs
-                )
+                for i, sol_pv in enumerate(self.m.Solar_pv_inputs)
                 for k, bldg in enumerate(self.m.Buildings)
                 if i == k
             ),
@@ -431,18 +401,13 @@ class EnergyHub:
         )
 
         def Solar_th_input_rule(m, t, sol_th, bldg):
-            return (
-                m.P[t, sol_th]
-                == m.P_solar[t, bldg] * m.Capacity[sol_th]
-            )
+            return m.P[t, sol_th] == m.P_solar[t, bldg] * m.Capacity[sol_th]
 
         self.m.Solar_th_input = pe.Constraint(
             (
                 (t, sol_th, bldg)
                 for t in self.m.Time
-                for i, sol_th in enumerate(
-                    self.m.Solar_th_inputs
-                )
+                for i, sol_th in enumerate(self.m.Solar_th_inputs)
                 for k, bldg in enumerate(self.m.Buildings)
                 if i == k
             ),
@@ -459,23 +424,14 @@ class EnergyHub:
             doc="Constraint for the formulation of the fixed cost in the objective function",
         )
 
-        def Roof_area_non_violation_rule(
-            m, sol_pv, sol_st, bldg
-        ):
-            return (
-                m.Capacity[sol_pv] + m.Capacity[sol_st]
-                <= m.Roof_area[bldg]
-            )
+        def Roof_area_non_violation_rule(m, sol_pv, sol_st, bldg):
+            return m.Capacity[sol_pv] + m.Capacity[sol_st] <= m.Roof_area[bldg]
 
         self.m.Roof_area_non_violation = pe.Constraint(
             (
                 (pv, st, bldg)
-                for i, pv in enumerate(
-                    self.m.Solar_pv_inputs
-                )
-                for j, st in enumerate(
-                    self.m.Solar_th_inputs
-                )
+                for i, pv in enumerate(self.m.Solar_pv_inputs)
+                for j, st in enumerate(self.m.Solar_th_inputs)
                 for k, bldg in enumerate(self.m.Buildings)
                 if i == j == k
             ),
@@ -489,12 +445,9 @@ class EnergyHub:
         def Storage_balance_rule(m, t, out):
             return (
                 m.E[t, out]
-                == (1 - m.Storage_standing_losses[out])
-                * m.E[t - 1, out]
-                + m.Storage_charging_eff[out]
-                * m.Qin[t, out]
-                - (1 / m.Storage_discharging_eff[out])
-                * m.Qout[t, out]
+                == (1 - m.Storage_standing_losses[out]) * m.E[t - 1, out]
+                + m.Storage_charging_eff[out] * m.Qin[t, out]
+                - (1 / m.Storage_discharging_eff[out]) * m.Qout[t, out]
             )
 
         self.m.Storage_balance = pe.Constraint(
@@ -507,12 +460,9 @@ class EnergyHub:
         def Storage_balance_rule2(m, t, out):
             return (
                 m.E[t, out]
-                == (1 - m.Storage_standing_losses[out])
-                * m.E[t + 23, out]
-                + m.Storage_charging_eff[out]
-                * m.Qin[t, out]
-                - (1 / m.Storage_discharging_eff[out])
-                * m.Qout[t, out]
+                == (1 - m.Storage_standing_losses[out]) * m.E[t + 23, out]
+                + m.Storage_charging_eff[out] * m.Qin[t, out]
+                - (1 / m.Storage_discharging_eff[out]) * m.Qout[t, out]
             )
 
         self.m.Storage_balance2 = pe.Constraint(
@@ -523,11 +473,7 @@ class EnergyHub:
         )
 
         def Storage_charg_rate_constr_rule(m, t, out):
-            return (
-                m.Qin[t, out]
-                <= m.Storage_max_charge[out]
-                * m.Storage_cap[out]
-            )
+            return m.Qin[t, out] <= m.Storage_max_charge[out] * m.Storage_cap[out]
 
         self.m.Storage_charg_rate_constr = pe.Constraint(
             self.m.Time,
@@ -537,11 +483,7 @@ class EnergyHub:
         )
 
         def Storage_discharg_rate_constr_rule(m, t, out):
-            return (
-                m.Qout[t, out]
-                <= m.Storage_max_charge[out]
-                * m.Storage_cap[out]
-            )
+            return m.Qout[t, out] <= m.Storage_max_charge[out] * m.Storage_cap[out]
 
         self.m.Storage_discharg_rate_constr = pe.Constraint(
             self.m.Time,
@@ -561,9 +503,7 @@ class EnergyHub:
         )
 
         def Max_allowable_storage_cap_rule(m, out):
-            return (
-                m.Storage_cap[out] <= m.Storage_max_cap[out]
-            )
+            return m.Storage_cap[out] <= m.Storage_max_cap[out]
 
         self.m.Max_allowable_storage_cap = pe.Constraint(
             self.m.Outputs,
@@ -572,9 +512,7 @@ class EnergyHub:
         )
 
         def Fixed_cost_storage_rule(m, out):
-            return (
-                m.Storage_cap[out] <= m.BigM * m.y_stor[out]
-            )
+            return m.Storage_cap[out] <= m.BigM * m.y_stor[out]
 
         self.m.Fixed_cost_storage = pe.Constraint(
             self.m.Outputs,
@@ -587,9 +525,7 @@ class EnergyHub:
 
         def Operating_cost_rule(m):
             return m.Operating_cost == sum(
-                m.Operating_costs[inp]
-                * m.P[t, inp]
-                * m.Number_of_days[t]
+                m.Operating_costs[inp] * m.P[t, inp] * m.Number_of_days[t]
                 for t in m.Time
                 for inp in m.Inputs
             )
@@ -601,9 +537,7 @@ class EnergyHub:
 
         def Income_via_exports_rule(m):
             return m.Income_via_exports == sum(
-                m.FiT[out]
-                * m.P_export[t, out]
-                * m.Number_of_days[t]
+                m.FiT[out] * m.P_export[t, out] * m.Number_of_days[t]
                 for t in m.Time
                 for out in m.Outputs
             )
@@ -619,25 +553,20 @@ class EnergyHub:
                 == sum(
                     (
                         m.Fixed_inv_costs[inp] * m.y[inp]
-                        + m.Linear_inv_costs[inp]
-                        * m.Capacity[inp]
+                        + m.Linear_inv_costs[inp] * m.Capacity[inp]
                     )
                     * m.CRF_tech[inp]
                     for inp in m.Inputs
                 )
                 + sum(
                     (
-                        m.Fixed_stor_costs[out]
-                        * m.y_stor[out]
-                        + m.Linear_stor_costs[out]
-                        * m.Storage_cap[out]
+                        m.Fixed_stor_costs[out] * m.y_stor[out]
+                        + m.Linear_stor_costs[out] * m.Storage_cap[out]
                     )
                     * m.CRF_stor[out]
                     for out in m.Outputs
                 )
-                + m.Network_inv_cost_per_m
-                * m.Network_length
-                * m.CRF_network
+                + m.Network_inv_cost_per_m * m.Network_length * m.CRF_network
             )
 
         self.m.Investment_cost_def = pe.Constraint(
@@ -648,9 +577,7 @@ class EnergyHub:
         def Total_cost_rule(m):
             return (
                 m.Total_cost
-                == m.Investment_cost
-                + m.Operating_cost
-                - m.Income_via_exports
+                == m.Investment_cost + m.Operating_cost - m.Income_via_exports
             )
 
         self.m.Total_cost_def = pe.Constraint(
@@ -660,9 +587,7 @@ class EnergyHub:
 
         def Total_carbon_rule(m):
             return m.Total_carbon == sum(
-                m.Carbon_factors[inp]
-                * m.P[t, inp]
-                * m.Number_of_days[t]
+                m.Carbon_factors[inp] * m.P[t, inp] * m.Number_of_days[t]
                 for t in m.Time
                 for inp in m.Inputs
             )
@@ -691,18 +616,14 @@ class EnergyHub:
         def cost_obj_rule(m):
             return m.Total_cost
 
-        self.m.Cost_obj = pe.Objective(
-            rule=cost_obj_rule, sense=pe.minimize
-        )
+        self.m.Cost_obj = pe.Objective(rule=cost_obj_rule, sense=pe.minimize)
 
         # Carbon objective
         # ----------------
         def carbon_obj_rule(m):
             return m.Total_carbon
 
-        self.m.Carbon_obj = pe.Objective(
-            rule=carbon_obj_rule, sense=pe.minimize
-        )
+        self.m.Carbon_obj = pe.Objective(rule=carbon_obj_rule, sense=pe.minimize)
 
     def solve(self):
         """
@@ -723,31 +644,19 @@ class EnergyHub:
         solver = pyomo.opt.SolverFactory("gurobi")
 
         def get_design_results(model_instance):
-            dsgn1 = pyio.get_entity(
-                model_instance, "Capacity"
-            )
-            dsgn2 = pyio.get_entity(
-                model_instance, "Storage_cap"
-            )
+            dsgn1 = pyio.get_entity(model_instance, "Capacity")
+            dsgn2 = pyio.get_entity(model_instance, "Storage_cap")
             dsgn = pd.concat([dsgn1, dsgn2])
             dsgn = pd.DataFrame(dsgn)
             dsgn = dsgn.T
             return dsgn
 
         def get_oper_results(model_instance):
-            oper1 = pyio.get_entities(
-                model_instance, "P"
-            ).unstack()
+            oper1 = pyio.get_entities(model_instance, "P").unstack()
             oper2 = pyio.get_entities(
-                model_instance,
-                ["P_export", "Qin", "Qout", "E"],
+                model_instance, ["P_export", "Qin", "Qout", "E"]
             ).unstack()
-            oper = pd.merge(
-                oper1,
-                oper2,
-                left_index=True,
-                right_index=True,
-            )
+            oper = pd.merge(oper1, oper2, left_index=True, right_index=True)
             return oper
 
         def get_obj_results(model_instance):
@@ -830,60 +739,38 @@ class EnergyHub:
                 self.m.Carbon_obj.deactivate()
                 self.m.Cost_obj.activate()
 
-                interval = (carb_max - carb_min) / (
-                    self.num_of_pfp + 1
-                )
-                steps = list(
-                    np.arange(carb_min, carb_max, interval)
-                )
+                interval = (carb_max - carb_min) / (self.num_of_pfp + 1)
+                steps = list(np.arange(carb_min, carb_max, interval))
                 steps.reverse()
                 print(steps)
 
                 for i in range(1, self.num_of_pfp + 1 + 1):
                     self.m.epsilon = steps[i - 1]
                     print(self.m.epsilon.extract_values())
-                    solver.solve(
-                        self.m, tee=False, keepfiles=False
-                    )
+                    solver.solve(self.m, tee=False, keepfiles=False)
 
                     # Save results
                     self.results[i] = self.m.clone()
-                    obj = pd.concat(
-                        [obj, get_obj_results(self.m)]
-                    )
-                    dsgn = pd.concat(
-                        [dsgn, get_design_results(self.m)]
-                    )
+                    obj = pd.concat([obj, get_obj_results(self.m)])
+                    dsgn = pd.concat([dsgn, get_design_results(self.m)])
                     oper[i] = get_oper_results(self.m)
                     oper[i].index.name = "Time"
             else:
                 self.m.epsilon = carb_min
                 self.m.Carbon_obj.deactivate()
                 self.m.Cost_obj.activate()
-                solver.solve(
-                    self.m, tee=False, keepfiles=False
-                )
+                solver.solve(self.m, tee=False, keepfiles=False)
 
                 # Save results
                 self.results[1] = self.m.clone()
-                obj = pd.concat(
-                    [obj, get_obj_results(self.m)]
-                )
-                dsgn = pd.concat(
-                    [dsgn, get_design_results(self.m)]
-                )
+                obj = pd.concat([obj, get_obj_results(self.m)])
+                dsgn = pd.concat([dsgn, get_design_results(self.m)])
                 oper[1] = get_oper_results(self.m)
                 oper[1].index.name = "Time"
         # Beautification
         # --------------
         obj.index.name = "Pareto front points"
-        dsgn.rename(
-            columns={
-                "Heat": "Heat stor",
-                "Elec": "Elec stor",
-            },
-            inplace=True,
-        )
+        dsgn.rename(columns={"Heat": "Heat stor", "Elec": "Elec stor"}, inplace=True)
         dsgn.index.name = "Pareto front points"
 
         if self.optim_mode == 1:
@@ -897,22 +784,12 @@ class EnergyHub:
         else:
             obj.index = (
                 ["Min_cost"]
-                + [
-                    "PFP" + str(i)
-                    for i in range(
-                        2, self.num_of_pfp + 1 + 1
-                    )
-                ]
+                + ["PFP" + str(i) for i in range(2, self.num_of_pfp + 1 + 1)]
                 + ["Min_carb"]
             )
             dsgn.index = (
                 ["Min_cost"]
-                + [
-                    "PFP" + str(i)
-                    for i in range(
-                        2, self.num_of_pfp + 1 + 1
-                    )
-                ]
+                + ["PFP" + str(i) for i in range(2, self.num_of_pfp + 1 + 1)]
                 + ["Min_carb"]
             )
         return obj, dsgn, oper
