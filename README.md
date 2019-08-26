@@ -30,12 +30,12 @@ Then, an `EnergyHub` object can be defined using the following inputs:
 3. A parameter specifying the number of Pareto points to be considered (only if multi-objective optimization is chosen)
   
 For instance:
-```
+```python
 # Create your model
 mod = eh.EnergyHub('Input_data', 3, 5)
 ```
 The final step is to solve the model and get the model results:
-```
+```python
 # Solve the model and get the results
 (obj, dsgn, oper) = mod.solve()
 ```
