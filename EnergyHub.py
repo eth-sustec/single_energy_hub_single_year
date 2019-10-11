@@ -19,7 +19,7 @@ import numpy as np
 class EnergyHub:
     """This class implements a standard energy hub model for the optimal design and operation of distributed multi-energy systems"""
 
-    def __init__(self, input_file, temp_res=1, optim_mode=3, num_of_pareto_points=5):
+    def __init__(self, input_file, temp_res=2, optim_mode=3, num_of_pareto_points=5):
         """
         __init__ function to read in the input data and begin the model creation process
 
@@ -28,7 +28,7 @@ class EnergyHub:
             * input_file: .py file where the values for all model parameters are defined
             * optim_mode (default = 3): 1: for cost minimization, 2: for carbon minimization, 3: for multi-objective optimization
             * num_of_pareto_points (default = 5): In case optim_mode is set to 3, then this specifies the number of Pareto points
-            * temp_res: 1: full horizon optimization (8760 hours), 2: typical days optimization
+            * temp_res: 1: typical days optimization, 2: full horizon optimization (8760 hours)
         """
         import importlib
 
