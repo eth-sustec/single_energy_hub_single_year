@@ -19,7 +19,7 @@ import numpy as np
 class EnergyHub:
     """This class implements a standard energy hub model for the optimal design and operation of distributed multi-energy systems"""
 
-    def __init__(self, input_file, optim_mode=3, num_of_pareto_points=5):
+    def __init__(self, input_file, temp_res=1, optim_mode=3, num_of_pareto_points=5):
         """
         __init__ function to read in the input data and begin the model creation process
 
@@ -28,11 +28,13 @@ class EnergyHub:
             * input_file: .py file where the values for all model parameters are defined
             * optim_mode (default = 3): 1: for cost minimization, 2: for carbon minimization, 3: for multi-objective optimization
             * num_of_pareto_points (default = 5): In case optim_mode is set to 3, then this specifies the number of Pareto points
+            * temp_res: 1: full horizon optimization (8760 hours), 2: typical days optimization
         """
         import importlib
 
         self.InputFile = input_file
         self.inp = importlib.import_module(self.InputFile)
+        self.temp_res = temp_res
         self.optim_mode = optim_mode
         if self.optim_mode == 1 or self.optim_mode == 2:
             self.num_of_pfp = 0
@@ -53,10 +55,17 @@ class EnergyHub:
         self.m.Time = pe.Set(
             initialize=self.inp.Time, doc="Time steps considered in the model"
         )
+
+        def First_hour_rule(m):
+            if self.temp_res == 1:
+                return list(range(1, self.inp.Number_of_time_steps + 1, 24))
+            else:
+                return 1
+
         self.m.First_hour = pe.Set(
-            initialize=self.inp.First_hour,
+            initialize=First_hour_rule,
             within=self.m.Time,
-            doc="The first hour of each typical day considered in the model",
+            doc="if temp_res == 1: The first hour of each typical day considered in the model | if temp_res == 2, it is the first hour of the year (i.e. First_hour = 1)",
         )
         self.m.Inputs = pe.Set(
             initialize=self.inp.Inputs,
@@ -108,12 +117,20 @@ class EnergyHub:
             initialize=self.inp.Loads,
             doc="Time-varying energy demand patterns for the energy hub",
         )
-        self.m.Number_of_days = pe.Param(
-            self.m.Time,
-            default=0,
-            initialize=self.inp.Number_of_days,
-            doc="The number of days that each time step of typical day corresponds to",
-        )
+        if self.temp_res == 1:
+            self.m.Number_of_days = pe.Param(
+                self.m.Time,
+                default=1,
+                initialize=self.inp.Number_of_days,
+                doc="The number of days that each time step of typical day corresponds to",
+            )
+        else:
+            self.m.Number_of_days = pe.Param(
+                self.m.Time,
+                default=1,
+                initialize=1,
+                doc="Parameter equal to 1 for each time step, because full horizon optimization is performed",
+            )
 
         # Technical parameters
         # --------------------
@@ -123,6 +140,12 @@ class EnergyHub:
             default=0,
             initialize=self.inp.Cmatrix,
             doc="The coupling matrix of the energy hub",
+        )
+        self.m.Minimum_part_load = pe.Param(
+            self.m.Dispatchable_Tech,
+            default=0,
+            initialize=self.inp.Minimum_part_load,
+            doc="Minimum allowable part-load during the operation of dispatchable technologies",
         )
         self.m.Storage_max_charge = pe.Param(
             self.m.Outputs,
@@ -278,6 +301,11 @@ class EnergyHub:
             within=pe.NonNegativeReals,
             doc="Exported energy (in this case only electricity exports are allowed)",
         )
+        self.m.y_on = pe.Var(
+            self.m.Dispatchable_Tech,
+            within=pe.Binary,
+            doc="Binary variable indicating the on (=1) or off (=0) state of a dispatchable technology",
+        )
         self.m.y = pe.Var(
             self.m.Inputs,
             within=pe.Binary,
@@ -415,6 +443,15 @@ class EnergyHub:
             doc="Constraint connecting the solar radiation per m2 with the area of solar thermal technologies",
         )
 
+        def Minimum_part_load_constr_rule(m, t, disp, out):
+            return m.P[t, disp] * m.Cmatrix[out, disp] <= m.BigM * m.y_on[disp, t]
+
+        def Minimum_part_load_constr_rule2(m, t, disp, out):
+            return (
+                m.P[t, disp] * m.Cmatrix[out, disp] + m.BigM * (1 - m.y_on[disp, t])
+                >= m.Minimum_part_load[disp] * m.Capacity[disp]
+            )
+
         def Fixed_cost_constr_rule(m, inp):
             return m.Capacity[inp] <= m.BigM * m.y[inp]
 
@@ -457,18 +494,26 @@ class EnergyHub:
             doc="Energy balance for the storage modules considering incoming and outgoing energy flows",
         )
 
-        def Storage_balance_rule2(m, t, out):
-            return (
-                m.E[t, out]
-                == (1 - m.Storage_standing_losses[out]) * m.E[t + 23, out]
-                + m.Storage_charging_eff[out] * m.Qin[t, out]
-                - (1 / m.Storage_discharging_eff[out]) * m.Qout[t, out]
-            )
+        def Storage_balance_cycling_rule(m, t, out):
+            if self.temp_res == 1:
+                return (
+                    m.E[t, out]
+                    == (1 - m.Storage_standing_losses[out]) * m.E[t + 23, out]
+                    + m.Storage_charging_eff[out] * m.Qin[t, out]
+                    - (1 / m.Storage_discharging_eff[out]) * m.Qout[t, out]
+                )
+            else:
+                return (
+                    m.E[t, out]
+                    == (1 - m.Storage_standing_losses[out]) * m.E[t + 8759, out]
+                    + m.Storage_charging_eff[out] * m.Qin[t, out]
+                    - (1 / m.Storage_discharging_eff[out]) * m.Qout[t, out]
+                )
 
-        self.m.Storage_balance2 = pe.Constraint(
+        self.m.Storage_balance_cycling = pe.Constraint(
             self.m.First_hour,
             self.m.Outputs,
-            rule=Storage_balance_rule2,
+            rule=Storage_balance_cycling_rule,
             doc="Energy balance for the storage modules considering incoming and outgoing energy flows",
         )
 
@@ -767,6 +812,7 @@ class EnergyHub:
                 dsgn = pd.concat([dsgn, get_design_results(self.m)])
                 oper[1] = get_oper_results(self.m)
                 oper[1].index.name = "Time"
+
         # Beautification
         # --------------
         obj.index.name = "Pareto front points"
@@ -796,5 +842,5 @@ class EnergyHub:
 
 
 if __name__ == "__main__":
-    sp = EnergyHub("Input_data", 3, 5)
+    sp = EnergyHub("Input_data", 1, 3, 5)
     (obj, dsgn, oper) = sp.solve()
