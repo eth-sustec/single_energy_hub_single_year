@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Jun 26 18:17:22 2019
+Input data for the simple energy hub model (only energy supply)
 
 @author: Georgios Mavromatidis (ETH Zurich, gmavroma@ethz.ch)
 """
