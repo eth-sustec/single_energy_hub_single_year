@@ -303,6 +303,7 @@ class EnergyHub:
         )
         self.m.y_on = pe.Var(
             self.m.Dispatchable_Tech,
+            self.m.Time,
             within=pe.Binary,
             doc="Binary variable indicating the on (=1) or off (=0) state of a dispatchable technology",
         )
@@ -805,7 +806,7 @@ class EnergyHub:
 
             # Pareto points
             # -------------
-            if self.num_of_pfp != 0:
+            if self.num_of_pfp == 0:
                 self.m.epsilon = carb_min
                 self.m.Carbon_obj.deactivate()
                 self.m.Cost_obj.activate()
@@ -847,11 +848,11 @@ class EnergyHub:
         if self.optim_mode == 1:
             obj.index = ["Min_cost"]
             dsgn.index = ["Min_cost"]
-            oper.index = "Time"
+            oper.index.name = "Time"
         elif self.optim_mode == 2:
             obj.index = ["Min_carb"]
             dsgn.index = ["Min_carb"]
-            oper.index = "Time"
+            oper.index.name = "Time"
         else:
             obj.index = (
                 ["Min_cost"]
