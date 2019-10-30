@@ -19,7 +19,7 @@ import numpy as np
 class EnergyHub:
     """This class implements a standard energy hub model for the optimal design and operation of distributed multi-energy systems"""
 
-    def __init__(self, input_file, temp_res=2, optim_mode=3, num_of_pareto_points=5):
+    def __init__(self, input_file, temp_res=1, optim_mode=3, num_of_pareto_points=5):
         """
         __init__ function to read in the input data and begin the model creation process
 
@@ -28,7 +28,7 @@ class EnergyHub:
             * input_file: .py file where the values for all model parameters are defined
             * optim_mode (default = 3): 1: for cost minimization, 2: for carbon minimization, 3: for multi-objective optimization
             * num_of_pareto_points (default = 5): In case optim_mode is set to 3, then this specifies the number of Pareto points
-            * temp_res: 1: typical days optimization, 2: full horizon optimization (8760 hours)
+            * temp_res (default = 1): 1: typical days optimization, 2: full horizon optimization (8760 hours)
         """
         import importlib
 
@@ -129,7 +129,7 @@ class EnergyHub:
                 self.m.Time,
                 default=1,
                 initialize=1,
-                doc="Parameter equal to 1 for each time step, because full horizon optimization is performed",
+                doc="Parameter equal to 1 for each time step, because full horizon optimization is performed (temp_res == 2)",
             )
 
         # Technical parameters
@@ -230,7 +230,7 @@ class EnergyHub:
         )
         self.m.Network_inv_cost_per_m = pe.Param(
             initialize=self.inp.Network_inv_cost_per_m,
-            doc="Investment cost per pipe m of the themral network of the energy hub",
+            doc="Investment cost per pipe m of the thermal network of the energy hub",
         )
         self.m.FiT = pe.Param(
             self.m.Outputs,
@@ -343,7 +343,7 @@ class EnergyHub:
         )
         self.m.y_stor = pe.Var(
             self.m.Outputs,
-            within=pe.NonNegativeReals,
+            within=pe.Binary,
             doc="Binary variable denoting the installation (=1) of energy storage technology",
         )
         self.m.Storage_cap = pe.Var(
@@ -443,7 +443,7 @@ class EnergyHub:
             doc="Constraint connecting the solar radiation per m2 with the area of solar thermal technologies",
         )
 
-        def Minimum_part_load_constr_rule(m, t, disp, out):
+        def Minimum_part_load_constr_rule1(m, t, disp, out):
             return m.P[t, disp] * m.Cmatrix[out, disp] <= m.BigM * m.y_on[disp, t]
 
         def Minimum_part_load_constr_rule2(m, t, disp, out):
@@ -451,6 +451,31 @@ class EnergyHub:
                 m.P[t, disp] * m.Cmatrix[out, disp] + m.BigM * (1 - m.y_on[disp, t])
                 >= m.Minimum_part_load[disp] * m.Capacity[disp]
             )
+
+        self.m.Mininum_part_rule_constr1 = pe.Constraint(
+            (
+                (t, disp, out)
+                for t in self.m.Time
+                for disp in self.m.Dispatchable_Tech
+                for out in self.m.Outputs
+                if m.Cmatrix[out,disp] > 0
+            ),
+            rule = Minimum_part_load_constr_rule1,
+            doc = "Constraint enforcing a minimum load during the operation of a dispatchable energy technology"
+        )
+
+        self.m.Mininum_part_rule_constr2 = pe.Constraint(
+            (
+                (t, disp, out)
+                for t in self.m.Time
+                for disp in self.m.Dispatchable_Tech
+                for out in self.m.Outputs
+                if m.Cmatrix[out,disp] > 0
+            ),
+            rule = Minimum_part_load_constr_rule2,
+            doc = "Constraint enforcing a minimum load during the operation of a dispatchable energy technology"
+        )
+
 
         def Fixed_cost_constr_rule(m, inp):
             return m.Capacity[inp] <= m.BigM * m.y[inp]
@@ -781,26 +806,6 @@ class EnergyHub:
             # Pareto points
             # -------------
             if self.num_of_pfp != 0:
-                self.m.Carbon_obj.deactivate()
-                self.m.Cost_obj.activate()
-
-                interval = (carb_max - carb_min) / (self.num_of_pfp + 1)
-                steps = list(np.arange(carb_min, carb_max, interval))
-                steps.reverse()
-                print(steps)
-
-                for i in range(1, self.num_of_pfp + 1 + 1):
-                    self.m.epsilon = steps[i - 1]
-                    print(self.m.epsilon.extract_values())
-                    solver.solve(self.m, tee=False, keepfiles=False)
-
-                    # Save results
-                    self.results[i] = self.m.clone()
-                    obj = pd.concat([obj, get_obj_results(self.m)])
-                    dsgn = pd.concat([dsgn, get_design_results(self.m)])
-                    oper[i] = get_oper_results(self.m)
-                    oper[i].index.name = "Time"
-            else:
                 self.m.epsilon = carb_min
                 self.m.Carbon_obj.deactivate()
                 self.m.Cost_obj.activate()
@@ -812,6 +817,26 @@ class EnergyHub:
                 dsgn = pd.concat([dsgn, get_design_results(self.m)])
                 oper[1] = get_oper_results(self.m)
                 oper[1].index.name = "Time"
+
+            else:
+                self.m.Carbon_obj.deactivate()
+                self.m.Cost_obj.activate()
+
+                interval = (carb_max - carb_min) / (self.num_of_pfp + 1)
+                steps = list(np.arange(carb_min, carb_max, interval))
+                steps.reverse()
+                print(steps)
+
+                for i in range(1, self.num_of_pfp + 1 + 1):
+                    self.m.epsilon = steps[i - 1]
+                    solver.solve(self.m, tee=False, keepfiles=False)
+
+                    # Save results
+                    self.results[i] = self.m.clone()
+                    obj = pd.concat([obj, get_obj_results(self.m)])
+                    dsgn = pd.concat([dsgn, get_design_results(self.m)])
+                    oper[i] = get_oper_results(self.m)
+                    oper[i].index.name = "Time"
 
         # Beautification
         # --------------
