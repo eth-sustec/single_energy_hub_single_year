@@ -129,8 +129,12 @@ Cmatrix.update(
 )
 
 Minimum_part_load = {
-    "ASHP": 0.0, "GSHP": 0.0, "Gas_Boiler": 0.0,
-    "Bio_Boiler": 0.0, "Oil_Boiler": 0.0, "CHP": 0.0
+    "ASHP": 0.0,
+    "GSHP": 0.0,
+    "Gas_Boiler": 0.0,
+    "Bio_Boiler": 0.0,
+    "Oil_Boiler": 0.0,
+    "CHP": 0.0,
 }
 
 # Energy storage technologies

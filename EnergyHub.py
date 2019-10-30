@@ -459,10 +459,10 @@ class EnergyHub:
                 for t in self.m.Time
                 for disp in self.m.Dispatchable_Tech
                 for out in self.m.Outputs
-                if self.m.Cmatrix[out,disp] > 0
+                if self.m.Cmatrix[out, disp] > 0
             ),
-            rule = Minimum_part_load_constr_rule1,
-            doc = "Constraint enforcing a minimum load during the operation of a dispatchable energy technology"
+            rule=Minimum_part_load_constr_rule1,
+            doc="Constraint enforcing a minimum load during the operation of a dispatchable energy technology",
         )
 
         self.m.Mininum_part_rule_constr2 = pe.Constraint(
@@ -471,12 +471,11 @@ class EnergyHub:
                 for t in self.m.Time
                 for disp in self.m.Dispatchable_Tech
                 for out in self.m.Outputs
-                if self.m.Cmatrix[out,disp] > 0
+                if self.m.Cmatrix[out, disp] > 0
             ),
-            rule = Minimum_part_load_constr_rule2,
-            doc = "Constraint enforcing a minimum load during the operation of a dispatchable energy technology"
+            rule=Minimum_part_load_constr_rule2,
+            doc="Constraint enforcing a minimum load during the operation of a dispatchable energy technology",
         )
-
 
         def Fixed_cost_constr_rule(m, inp):
             return m.Capacity[inp] <= m.BigM * m.y[inp]
