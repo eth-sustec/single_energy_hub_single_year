@@ -458,7 +458,7 @@ class EnergyHub:
                 for t in self.m.Time
                 for disp in self.m.Dispatchable_Tech
                 for out in self.m.Outputs
-                if m.Cmatrix[out,disp] > 0
+                if self.m.Cmatrix[out,disp] > 0
             ),
             rule = Minimum_part_load_constr_rule1,
             doc = "Constraint enforcing a minimum load during the operation of a dispatchable energy technology"
@@ -470,7 +470,7 @@ class EnergyHub:
                 for t in self.m.Time
                 for disp in self.m.Dispatchable_Tech
                 for out in self.m.Outputs
-                if m.Cmatrix[out,disp] > 0
+                if self.m.Cmatrix[out,disp] > 0
             ),
             rule = Minimum_part_load_constr_rule2,
             doc = "Constraint enforcing a minimum load during the operation of a dispatchable energy technology"
