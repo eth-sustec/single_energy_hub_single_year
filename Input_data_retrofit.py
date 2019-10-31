@@ -22,15 +22,12 @@ Inputs_wo_grid = Inputs.copy()
 Inputs_wo_grid.remove("Grid")
 CHP_Tech = ["CHP"]
 Outputs = ["Heat", "Elec"]
-Retrofit_scenarios = ['Noretrofit','Wall','Fullretrofit']
+Retrofit_scenarios = ["Noretrofit", "Wall", "Fullretrofit"]
 
 # Defining input values for model parameters
 # ==========================================
 Loads_init = pd.read_excel(
-    "Time_series_inputs_retrofit.xlsx",
-    sheet_name="Loads",
-    index_col=[0],
-    header=[0, 1],
+    "Time_series_inputs_retrofit.xlsx", sheet_name="Loads", index_col=[0], header=[0, 1]
 )
 Loads_init = Loads_init.stack().stack()
 Loads = Loads_init.to_dict()
@@ -44,12 +41,9 @@ Number_of_days_init = pd.read_excel(
 Number_of_days = Number_of_days_init.stack().to_dict()
 
 P_solar = pd.read_excel(
-    "Time_series_inputs_retrofit.xlsx",
-    sheet_name="Solar",
-    header=[0,1],
-    index_col=[0],
+    "Time_series_inputs_retrofit.xlsx", sheet_name="Solar", header=[0, 1], index_col=[0]
 )
-P_solar = P_solar.stack().stack().reorder_levels([0,2,1]).to_dict()
+P_solar = P_solar.stack().stack().reorder_levels([0, 2, 1]).to_dict()
 
 Interest_rate = 0.080
 
@@ -160,5 +154,5 @@ CRF_stor = {
 
 # Retrofits
 # ---------
-Retrofit_inv_costs = {'Noretrofit': 0, 'Wall': 250000,'Fullretrofit': 450000}
-Lifetime_retrofit = {'Noretrofit': 40, 'Wall': 40,'Fullretrofit': 40}
+Retrofit_inv_costs = {"Noretrofit": 0, "Wall": 250000, "Fullretrofit": 450000}
+Lifetime_retrofit = {"Noretrofit": 40, "Wall": 40, "Fullretrofit": 40}

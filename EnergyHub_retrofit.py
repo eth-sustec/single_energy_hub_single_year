@@ -472,7 +472,8 @@ class EnergyHub_retrofit:
                 + m.Qout[t, out]
                 - m.Qin[t, out]
                 == sum(
-                    m.y_retrofit[ret] * m.Loads[t, ret, out] for ret in self.m.Retrofit_scenarios
+                    m.y_retrofit[ret] * m.Loads[t, ret, out]
+                    for ret in self.m.Retrofit_scenarios
                 )
                 / m.Network_efficiency[out]
                 + m.P_export[t, out]
@@ -510,7 +511,8 @@ class EnergyHub_retrofit:
             #                for ret in m.Retrofit_scenarios
             #            )
             return m.P[t, sol_pv] == sum(
-                m.P_solar[t, ret, bldg] * m.z3[sol_pv, ret] for ret in m.Retrofit_scenarios
+                m.P_solar[t, ret, bldg] * m.z3[sol_pv, ret]
+                for ret in m.Retrofit_scenarios
             )
 
         self.m.Solar_pv_input = pe.Constraint(
@@ -531,7 +533,8 @@ class EnergyHub_retrofit:
             #                for ret in m.Retrofit_scenarios
             #            )
             return m.P[t, sol_th] == sum(
-                m.P_solar[t, ret, bldg] * m.z4[sol_th, ret] for ret in m.Retrofit_scenarios
+                m.P_solar[t, ret, bldg] * m.z4[sol_th, ret]
+                for ret in m.Retrofit_scenarios
             )
 
         self.m.Solar_th_input = pe.Constraint(
@@ -698,8 +701,8 @@ class EnergyHub_retrofit:
             return sum(m.y_retrofit[ret] for ret in m.Retrofit_scenarios) == 1
 
         self.m.One_retrofit_state_def = pe.Constraint(
-            rule = One_retrofit_state_rule,
-            doc = "Constraint to impose that one retrofit state out of all possible must be selected"
+            rule=One_retrofit_state_rule,
+            doc="Constraint to impose that one retrofit state out of all possible must be selected",
         )
 
         # Objective function definitions
