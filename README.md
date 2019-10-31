@@ -26,13 +26,14 @@ import EnergyHub as eh
 Then, an `EnergyHub` object can be defined using the following inputs:
 
 1. A file specifying the values of the model parameters (the model formulation is decoupled from the attribution of parameter values)
-2. A parameter specifying the optimization objectives (1: total cost minimization, 2: CO<sub>2</sub> minimization, 3: multi-objective optimization)
-3. A parameter specifying the number of Pareto points to be considered (only if multi-objective optimization is chosen)
+2. A parameter specifying the temporal resolution of the model (1: typical days optimization, 2: full yearly horizon optimization (8760 hours))
+3. A parameter specifying the optimization objectives (1: total cost minimization, 2: CO<sub>2</sub> minimization, 3: multi-objective optimization)
+4. A parameter specifying the number of Pareto points to be considered (only if multi-objective optimization is chosen)
   
 For instance:
 ```python
 # Create your model
-mod = eh.EnergyHub('Input_data', 3, 5)
+mod = eh.EnergyHub('Input_data', 1, 3, 5)
 ```
 The final step is to solve the model and get the model results:
 ```python
