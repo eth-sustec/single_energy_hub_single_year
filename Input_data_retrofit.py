@@ -22,30 +22,34 @@ Inputs_wo_grid = Inputs.copy()
 Inputs_wo_grid.remove("Grid")
 CHP_Tech = ["CHP"]
 Outputs = ["Heat", "Elec"]
+Retrofit_scenarios = ['Noretrofit','Wall','Fullretrofit']
 
 # Defining input values for model parameters
 # ==========================================
-Loads = pd.read_excel(
-    "Time_series_inputs.xlsx", usecols="A:B", index_col=None, header=None
-)  # Read from some Excel/.csv file
-Loads.index = range(1, Number_of_time_steps + 1)
-Loads.columns = ["Heat", "Elec"]
-Loads = Loads.stack().to_dict()
+Loads_init = pd.read_excel(
+    "Time_series_inputs_retrofit.xlsx",
+    sheet_name="Loads",
+    index_col=[0],
+    header=[0, 1],
+)
+Loads_init = Loads_init.stack().stack()
+Loads = Loads_init.to_dict()
 
-Number_of_days = pd.read_excel(
-    "Time_series_inputs.xlsx", usecols="C", index_col=None, header=None
+Number_of_days_init = pd.read_excel(
+    "Time_series_inputs_retrofit.xlsx",
+    sheet_name="Number_of_days",
+    index_col=[0],
+    header=[0],
 )  # Read from some Excel/.csv file
-Number_of_days.index = range(1, Number_of_time_steps + 1)
-Number_of_days.columns = ["Number_of_days"]
-Number_of_days = Number_of_days.to_dict()
-Number_of_days = Number_of_days["Number_of_days"]
+Number_of_days = Number_of_days_init.stack().to_dict()
 
 P_solar = pd.read_excel(
-    "Time_series_inputs.xlsx", usecols="D:M", index_col=None, header=None
-)  # Read from some Excel/.csv file
-P_solar.index = range(1, Number_of_time_steps + 1)
-P_solar.columns = [i for i in range(1, Number_of_buildings + 1)]
-P_solar = P_solar.stack().to_dict()
+    "Time_series_inputs_retrofit.xlsx",
+    sheet_name="Solar",
+    header=[0,1],
+    index_col=[0],
+)
+P_solar = P_solar.stack().stack().reorder_levels([0,2,1]).to_dict()
 
 Interest_rate = 0.080
 
@@ -153,3 +157,8 @@ CRF_stor = {
     / ((1 + Interest_rate) ** stor_tech[key][8] - 1)
     for key in stor_tech.keys()
 }
+
+# Retrofits
+# ---------
+Retrofit_inv_costs = {'Noretrofit': 0, 'Wall': 250000,'Fullretrofit': 450000}
+Lifetime_retrofit = {'Noretrofit': 40, 'Wall': 40,'Fullretrofit': 40}
