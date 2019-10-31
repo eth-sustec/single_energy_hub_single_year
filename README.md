@@ -33,7 +33,7 @@ Then, an `EnergyHub` object can be defined using the following inputs:
 For instance:
 ```python
 # Create your model
-mod = eh.EnergyHub('Input_data', 1, 3, 5)
+mod = eh.EnergyHub("Input_data", 1, 3, 5)
 ```
 The final step is to solve the model and get the model results:
 ```python
