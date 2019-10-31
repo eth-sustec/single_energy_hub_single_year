@@ -241,18 +241,38 @@ class EnergyHub:
             initialize=self.inp.Interest_rate,
             doc="The interest rate used for the CRF calculation",
         )
+
+        def CRF_tech_rule(m, inp):
+            return (
+                self.m.Interest_rate
+                * (1 + self.m.Interest_rate) ** self.m.Lifetime_tech[inp]
+            ) / ((1 + self.m.Interest_rate) ** self.m.Lifetime_tech[inp] - 1)
+
         self.m.CRF_tech = pe.Param(
             self.m.Inputs,
-            initialize=self.inp.CRF_tech,
+            initialize=CRF_tech_rule,
             doc="Capital Recovery Factor (CRF) used to annualise the investment cost of generation technologies",
         )
+
+        def CRF_stor_rule(m, out):
+            return (
+                self.m.Interest_rate
+                * (1 + self.m.Interest_rate) ** self.m.Lifetime_stor[out]
+            ) / ((1 + self.m.Interest_rate) ** self.m.Lifetime_stor[out] - 1)
+
         self.m.CRF_stor = pe.Param(
             self.m.Outputs,
-            initialize=self.inp.CRF_stor,
+            initialize=CRF_stor_rule,
             doc="Capital Recovery Factor (CRF) used to annualise the investment cost of storage technologies",
         )
+        def CRF_network_rule(m):
+            return (
+                self.m.Interest_rate
+                * (1 + self.m.Interest_rate) ** self.m.Network_lifetime
+            ) / ((1 + self.m.Interest_rate) ** self.m.Network_lifetime - 1)
+
         self.m.CRF_network = pe.Param(
-            initialize=self.inp.CRF_network,
+            initialize=CRF_network_rule,
             doc="Capital Recovery Factor (CRF) used to annualise the investment cost of the networks used by the energy hub",
         )
 
@@ -282,7 +302,7 @@ class EnergyHub:
             initialize=self.inp.P_solar,
             doc="Incoming solar radiation patterns (kWh/m2) for solar technologies",
         )
-        self.m.BigM = pe.Param(default=10 ** 5, doc="Big M: Sufficiently large value")
+        self.m.BigM = pe.Param(default=10 ** 6, doc="Big M: Sufficiently large value")
 
         # Model variables
         # ===============

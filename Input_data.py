@@ -53,9 +53,6 @@ Network_efficiency = {"Heat": 0.90, "Elec": 1.00}
 Network_length = 200
 Network_lifetime = 40
 Network_inv_cost_per_m = 800
-CRF_network = (Interest_rate * (1 + Interest_rate) ** Network_lifetime) / (
-    (1 + Interest_rate) ** Network_lifetime - 1
-)
 
 Roof_area_per_bldg = [265, 21, 227, 162, 162, 215, 50, 50, 94, 14]
 Roof_area = {key + 1: Roof_area_per_bldg[key] for key in range(0, Number_of_buildings)}
@@ -93,11 +90,6 @@ Linear_inv_costs = {key: gen_tech[key][1] for key in gen_tech.keys()}
 Fixed_inv_costs = {key: gen_tech[key][2] for key in gen_tech.keys()}
 Carbon_factors = {key: gen_tech[key][3] for key in gen_tech.keys()}
 Lifetime_tech = {key: gen_tech[key][4] for key in gen_tech.keys()}
-CRF_tech = {
-    key: (Interest_rate * (1 + Interest_rate) ** gen_tech[key][4])
-    / ((1 + Interest_rate) ** gen_tech[key][4] - 1)
-    for key in gen_tech.keys()
-}
 
 FiT = 0.120
 
@@ -155,8 +147,3 @@ Storage_charging_eff = {key: stor_tech[key][5] for key in stor_tech.keys()}
 Storage_discharging_eff = {key: stor_tech[key][6] for key in stor_tech.keys()}
 Storage_max_cap = {key: stor_tech[key][7] for key in stor_tech.keys()}
 Lifetime_stor = {key: stor_tech[key][8] for key in stor_tech.keys()}
-CRF_stor = {
-    key: (Interest_rate * (1 + Interest_rate) ** stor_tech[key][8])
-    / ((1 + Interest_rate) ** stor_tech[key][8] - 1)
-    for key in stor_tech.keys()
-}
