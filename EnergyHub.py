@@ -265,6 +265,7 @@ class EnergyHub:
             initialize=CRF_stor_rule,
             doc="Capital Recovery Factor (CRF) used to annualise the investment cost of storage technologies",
         )
+
         def CRF_network_rule(m):
             return (
                 self.m.Interest_rate
