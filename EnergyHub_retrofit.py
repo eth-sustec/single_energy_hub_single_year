@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Single energy hub - single stage model for the optimal design of a distributed energy system
+Single energy hub - single stage model for the optimal design of a distributed energy system including building retrofit options
 
 @author: Georgios Mavromatidis (ETH Zurich, gmavroma@ethz.ch)
 
@@ -28,7 +28,7 @@ class EnergyHub_retrofit:
             * input_file: .py file where the values for all model parameters are defined
             * optim_mode (default = 3): 1: for cost minimization, 2: for carbon minimization, 3: for multi-objective optimization
             * num_of_pareto_points (default = 5): In case optim_mode is set to 3, then this specifies the number of Pareto points
-            * temp_res: 1: full horizon optimization (8760 hours), 2: typical days optimization
+            * temp_res (default = 1): 1: typical days optimization, 2: full horizon optimization (8760 hours)
         """
         import importlib
 
@@ -57,8 +57,8 @@ class EnergyHub_retrofit:
         )
 
         def First_hour_rule(m):
-            if m.temp_res == 1:
-                return list(range(1, max(m.inp.Time) + 1, 24))
+            if self.temp_res == 1:
+                return list(range(1, self.inp.Number_of_time_steps + 1, 24))
             else:
                 return 1
 
@@ -136,7 +136,7 @@ class EnergyHub_retrofit:
                 self.m.Retrofit_scenarios,
                 default=1,
                 initialize=1,
-                doc="Parameter equal to 1 for each time step, because full horizon optimization is performed",
+                doc="Parameter equal to 1 for each time step, because full horizon optimization is performed (temp_res == 2)",
             )
 
         # Technical parameters
@@ -195,6 +195,7 @@ class EnergyHub_retrofit:
             doc="Lifetime of energy storage technologies",
         )
         self.m.Lifetime_retrofit = pe.Param(
+            self.m.Retrofit_scenarios,
             initialize=self.inp.Lifetime_retrofit,
             doc="Lifetime considered for each retrofit scenario",
         )
@@ -241,10 +242,11 @@ class EnergyHub_retrofit:
         )
         self.m.Network_inv_cost_per_m = pe.Param(
             initialize=self.inp.Network_inv_cost_per_m,
-            doc="Investment cost per pipe m of the themral network of the energy hub",
+            doc="Investment cost per pipe m of the thermal network of the energy hub",
         )
-        self.m.Retrofit_inv_cost = pe.Param(
-            initialize=self.inp.Retrofit_inv_cost,
+        self.m.Retrofit_inv_costs = pe.Param(
+            self.m.Retrofit_scenarios,
+            initialize=self.inp.Retrofit_inv_costs,
             doc="Investment cost for each of the considered retrofit scenarios",
         )
         self.m.FiT = pe.Param(
@@ -256,22 +258,51 @@ class EnergyHub_retrofit:
             initialize=self.inp.Interest_rate,
             doc="The interest rate used for the CRF calculation",
         )
+
+        def CRF_tech_rule(m, inp):
+            return (
+                self.m.Interest_rate
+                * (1 + self.m.Interest_rate) ** self.m.Lifetime_tech[inp]
+            ) / ((1 + self.m.Interest_rate) ** self.m.Lifetime_tech[inp] - 1)
+
         self.m.CRF_tech = pe.Param(
             self.m.Inputs,
-            initialize=self.inp.CRF_tech,
+            initialize=CRF_tech_rule,
             doc="Capital Recovery Factor (CRF) used to annualise the investment cost of generation technologies",
         )
+
+        def CRF_stor_rule(m, out):
+            return (
+                self.m.Interest_rate
+                * (1 + self.m.Interest_rate) ** self.m.Lifetime_stor[out]
+            ) / ((1 + self.m.Interest_rate) ** self.m.Lifetime_stor[out] - 1)
+
         self.m.CRF_stor = pe.Param(
             self.m.Outputs,
-            initialize=self.inp.CRF_stor,
+            initialize=CRF_stor_rule,
             doc="Capital Recovery Factor (CRF) used to annualise the investment cost of storage technologies",
         )
+
+        def CRF_network_rule(m):
+            return (
+                self.m.Interest_rate
+                * (1 + self.m.Interest_rate) ** self.m.Network_lifetime
+            ) / ((1 + self.m.Interest_rate) ** self.m.Network_lifetime - 1)
+
         self.m.CRF_network = pe.Param(
-            initialize=self.inp.CRF_network,
+            initialize=CRF_network_rule,
             doc="Capital Recovery Factor (CRF) used to annualise the investment cost of the networks used by the energy hub",
         )
+
+        def CRF_retrofit_rule(m, ret):
+            return (
+                self.m.Interest_rate
+                * (1 + self.m.Interest_rate) ** self.m.Lifetime_retrofit[ret]
+            ) / ((1 + self.m.Interest_rate) ** self.m.Lifetime_retrofit[ret] - 1)
+
         self.m.CRF_retrofit = pe.Param(
-            initialize=self.inp.CRF_retrofit,
+            self.m.Retrofit_scenarios,
+            initialize=CRF_retrofit_rule,
             doc="Capital Recovery Factor (CRF) used to annualise the investment cost of the considered retrofit scenarios",
         )
 
@@ -297,11 +328,12 @@ class EnergyHub_retrofit:
         )
         self.m.P_solar = pe.Param(
             self.m.Time,
+            self.m.Retrofit_scenarios,
             self.m.Buildings,
             initialize=self.inp.P_solar,
             doc="Incoming solar radiation patterns (kWh/m2) for solar technologies",
         )
-        self.m.BigM = pe.Param(default=10 ** 5, doc="Big M: Sufficiently large value")
+        self.m.BigM = pe.Param(default=10 ** 6, doc="Big M: Sufficiently large value")
 
         # Model variables
         # ===============
@@ -322,6 +354,7 @@ class EnergyHub_retrofit:
         )
         self.m.y_on = pe.Var(
             self.m.Dispatchable_Tech,
+            self.m.Time,
             within=pe.Binary,
             doc="Binary variable indicating the on (=1) or off (=0) state of a dispatchable technology",
         )
@@ -438,7 +471,11 @@ class EnergyHub_retrofit:
                 sum(m.P[t, inp] * m.Cmatrix[out, inp] for inp in m.Inputs)
                 + m.Qout[t, out]
                 - m.Qin[t, out]
-                == m.Loads[t, out] / m.Network_efficiency[out] + m.P_export[t, out]
+                == sum(
+                    m.y_retrofit[ret] * m.Loads[t, ret, out] for ret in self.m.Retrofit_scenarios
+                )
+                / m.Network_efficiency[out]
+                + m.P_export[t, out]
             )
 
         self.m.Load_balance = pe.Constraint(
@@ -468,7 +505,13 @@ class EnergyHub_retrofit:
         )
 
         def Solar_pv_input_rule(m, t, sol_pv, bldg):
-            return m.P[t, sol_pv] == m.P_solar[t, bldg] * m.Capacity[sol_pv]
+            #            return m.P[t, sol_pv] == sum(
+            #                m.P_solar[t, bldg] * y_retrofit[ret] * m.Capacity[sol_pv]
+            #                for ret in m.Retrofit_scenarios
+            #            )
+            return m.P[t, sol_pv] == sum(
+                m.P_solar[t, ret, bldg] * m.z3[sol_pv, ret] for ret in m.Retrofit_scenarios
+            )
 
         self.m.Solar_pv_input = pe.Constraint(
             (
@@ -483,7 +526,13 @@ class EnergyHub_retrofit:
         )
 
         def Solar_th_input_rule(m, t, sol_th, bldg):
-            return m.P[t, sol_th] == m.P_solar[t, bldg] * m.Capacity[sol_th]
+            #            return m.P[t, sol_pv] == sum(
+            #                m.P_solar[t, bldg] * y_retrofit[ret] * m.Capacity[sol_th]
+            #                for ret in m.Retrofit_scenarios
+            #            )
+            return m.P[t, sol_th] == sum(
+                m.P_solar[t, ret, bldg] * m.z4[sol_th, ret] for ret in m.Retrofit_scenarios
+            )
 
         self.m.Solar_th_input = pe.Constraint(
             (
@@ -497,7 +546,7 @@ class EnergyHub_retrofit:
             doc="Constraint connecting the solar radiation per m2 with the area of solar thermal technologies",
         )
 
-        def Minimum_part_load_constr_rule(m, t, disp, out):
+        def Minimum_part_load_constr_rule1(m, t, disp, out):
             return m.P[t, disp] * m.Cmatrix[out, disp] <= m.BigM * m.y_on[disp, t]
 
         def Minimum_part_load_constr_rule2(m, t, disp, out):
@@ -505,6 +554,30 @@ class EnergyHub_retrofit:
                 m.P[t, disp] * m.Cmatrix[out, disp] + m.BigM * (1 - m.y_on[disp, t])
                 >= m.Minimum_part_load[disp] * m.Capacity[disp]
             )
+
+        self.m.Mininum_part_rule_constr1 = pe.Constraint(
+            (
+                (t, disp, out)
+                for t in self.m.Time
+                for disp in self.m.Dispatchable_Tech
+                for out in self.m.Outputs
+                if self.m.Cmatrix[out, disp] > 0
+            ),
+            rule=Minimum_part_load_constr_rule1,
+            doc="Constraint enforcing a minimum load during the operation of a dispatchable energy technology",
+        )
+
+        self.m.Mininum_part_rule_constr2 = pe.Constraint(
+            (
+                (t, disp, out)
+                for t in self.m.Time
+                for disp in self.m.Dispatchable_Tech
+                for out in self.m.Outputs
+                if self.m.Cmatrix[out, disp] > 0
+            ),
+            rule=Minimum_part_load_constr_rule2,
+            doc="Constraint enforcing a minimum load during the operation of a dispatchable energy technology",
+        )
 
         def Fixed_cost_constr_rule(m, inp):
             return m.Capacity[inp] <= m.BigM * m.y[inp]
@@ -624,9 +697,11 @@ class EnergyHub_retrofit:
 
         def Operating_cost_rule(m):
             return m.Operating_cost == sum(
-                m.Operating_costs[inp] * m.P[t, inp] * m.Number_of_days[t]
+                # m.Operating_costs[inp] * m.P[t, inp] * m.Number_of_days[t, ret] * m.y_retrofit[ret]
+                m.Operating_costs[inp] * m.Number_of_days[t, ret] * m.z1[t, inp, ret]
                 for t in m.Time
                 for inp in m.Inputs
+                for ret in m.Retrofit_scenarios
             )
 
         self.m.Operating_cost_def = pe.Constraint(
@@ -636,9 +711,11 @@ class EnergyHub_retrofit:
 
         def Income_via_exports_rule(m):
             return m.Income_via_exports == sum(
-                m.FiT[out] * m.P_export[t, out] * m.Number_of_days[t]
+                # m.FiT[out] * m.P_export[t, out] * m.Number_of_days[t, ret] * m.y_retrofit[ret]
+                m.FiT[out] * m.Number_of_days[t, ret] * m.z2[t, out, ret]
                 for t in m.Time
                 for out in m.Outputs
+                for ret in m.Retrofit_scenarios
             )
 
         self.m.Income_via_exports_def = pe.Constraint(
@@ -647,25 +724,23 @@ class EnergyHub_retrofit:
         )
 
         def Investment_cost_rule(m):
-            return (
-                m.Investment_cost
-                == sum(
-                    (
-                        m.Fixed_inv_costs[inp] * m.y[inp]
-                        + m.Linear_inv_costs[inp] * m.Capacity[inp]
-                    )
-                    * m.CRF_tech[inp]
-                    for inp in m.Inputs
+            return m.Investment_cost == sum(
+                (
+                    m.Fixed_inv_costs[inp] * m.y[inp]
+                    + m.Linear_inv_costs[inp] * m.Capacity[inp]
                 )
-                + sum(
-                    (
-                        m.Fixed_stor_costs[out] * m.y_stor[out]
-                        + m.Linear_stor_costs[out] * m.Storage_cap[out]
-                    )
-                    * m.CRF_stor[out]
-                    for out in m.Outputs
+                * m.CRF_tech[inp]
+                for inp in m.Inputs
+            ) + sum(
+                (
+                    m.Fixed_stor_costs[out] * m.y_stor[out]
+                    + m.Linear_stor_costs[out] * m.Storage_cap[out]
                 )
-                + m.Network_inv_cost_per_m * m.Network_length * m.CRF_network
+                * m.CRF_stor[out]
+                for out in m.Outputs
+            ) + m.Network_inv_cost_per_m * m.Network_length * m.CRF_network + sum(
+                m.y_retrofit[ret] * m.Retrofit_inv_costs[ret] * m.CRF_retrofit[ret]
+                for ret in m.Retrofit_scenarios
             )
 
         self.m.Investment_cost_def = pe.Constraint(
@@ -686,9 +761,11 @@ class EnergyHub_retrofit:
 
         def Total_carbon_rule(m):
             return m.Total_carbon == sum(
-                m.Carbon_factors[inp] * m.P[t, inp] * m.Number_of_days[t]
+                # m.Carbon_factors[inp] * m.P[t, inp] * m.Number_of_days[t, ret] * y_retrofit[ret]
+                m.Carbon_factors[inp] * m.Number_of_days[t, ret] * m.z1[t, inp, ret]
                 for t in m.Time
                 for inp in m.Inputs
+                for ret in m.Retrofit_scenarios
             )
 
         self.m.Total_carbon_def = pe.Constraint(
@@ -1007,27 +1084,7 @@ class EnergyHub_retrofit:
 
             # Pareto points
             # -------------
-            if self.num_of_pfp != 0:
-                self.m.Carbon_obj.deactivate()
-                self.m.Cost_obj.activate()
-
-                interval = (carb_max - carb_min) / (self.num_of_pfp + 1)
-                steps = list(np.arange(carb_min, carb_max, interval))
-                steps.reverse()
-                print(steps)
-
-                for i in range(1, self.num_of_pfp + 1 + 1):
-                    self.m.epsilon = steps[i - 1]
-                    print(self.m.epsilon.extract_values())
-                    solver.solve(self.m, tee=False, keepfiles=False)
-
-                    # Save results
-                    self.results[i] = self.m.clone()
-                    obj = pd.concat([obj, get_obj_results(self.m)])
-                    dsgn = pd.concat([dsgn, get_design_results(self.m)])
-                    oper[i] = get_oper_results(self.m)
-                    oper[i].index.name = "Time"
-            else:
+            if self.num_of_pfp == 0:
                 self.m.epsilon = carb_min
                 self.m.Carbon_obj.deactivate()
                 self.m.Cost_obj.activate()
@@ -1040,6 +1097,26 @@ class EnergyHub_retrofit:
                 oper[1] = get_oper_results(self.m)
                 oper[1].index.name = "Time"
 
+            else:
+                self.m.Carbon_obj.deactivate()
+                self.m.Cost_obj.activate()
+
+                interval = (carb_max - carb_min) / (self.num_of_pfp + 1)
+                steps = list(np.arange(carb_min, carb_max, interval))
+                steps.reverse()
+                print(steps)
+
+                for i in range(1, self.num_of_pfp + 1 + 1):
+                    self.m.epsilon = steps[i - 1]
+                    solver.solve(self.m, tee=False, keepfiles=False)
+
+                    # Save results
+                    self.results[i] = self.m.clone()
+                    obj = pd.concat([obj, get_obj_results(self.m)])
+                    dsgn = pd.concat([dsgn, get_design_results(self.m)])
+                    oper[i] = get_oper_results(self.m)
+                    oper[i].index.name = "Time"
+
         # Beautification
         # --------------
         obj.index.name = "Pareto front points"
@@ -1049,11 +1126,11 @@ class EnergyHub_retrofit:
         if self.optim_mode == 1:
             obj.index = ["Min_cost"]
             dsgn.index = ["Min_cost"]
-            oper.index = "Time"
+            oper.index.name = "Time"
         elif self.optim_mode == 2:
             obj.index = ["Min_carb"]
             dsgn.index = ["Min_carb"]
-            oper.index = "Time"
+            oper.index.name = "Time"
         else:
             obj.index = (
                 ["Min_cost"]
@@ -1069,5 +1146,5 @@ class EnergyHub_retrofit:
 
 
 if __name__ == "__main__":
-    sp = EnergyHub_retrofit("Input_data", 1, 3, 5)
+    sp = EnergyHub_retrofit("Input_data_retrofit", 1, 3, 5)
     (obj, dsgn, oper) = sp.solve()
