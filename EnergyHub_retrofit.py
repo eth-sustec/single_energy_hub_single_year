@@ -26,9 +26,9 @@ class EnergyHub_retrofit:
         Inputs to the function:
         -----------------------
             * input_file: .py file where the values for all model parameters are defined
+            * temp_res (default = 1): 1: typical days optimization, 2: full horizon optimization (8760 hours)
             * optim_mode (default = 3): 1: for cost minimization, 2: for carbon minimization, 3: for multi-objective optimization
             * num_of_pareto_points (default = 5): In case optim_mode is set to 3, then this specifies the number of Pareto points
-            * temp_res (default = 1): 1: typical days optimization, 2: full horizon optimization (8760 hours)
         """
         import importlib
 
@@ -690,6 +690,16 @@ class EnergyHub_retrofit:
             self.m.Outputs,
             rule=Fixed_cost_storage_rule,
             doc="Constraint for the formulation of the fixed cost in the objective function",
+        )
+
+        # Retrofit constraints
+        # --------------------
+        def One_retrofit_state_rule(m):
+            return sum(m.y_retrofit[ret] for ret in m.Retrofit_scenarios) == 1
+
+        self.m.One_retrofit_state_def = pe.Constraint(
+            rule = One_retrofit_state_rule,
+            doc = "Constraint to impose that one retrofit state out of all possible must be selected"
         )
 
         # Objective function definitions
