@@ -14,7 +14,8 @@ from pyomo.opt import SolverResults
 
 import pandas as pd
 import numpy as np
-
+import cloudpickle 
+import pickle
 
 class EnergyHub:
     """This class implements a standard energy hub model for the optimal design and operation of distributed multi-energy systems"""
@@ -26,9 +27,9 @@ class EnergyHub:
         Inputs to the function:
         -----------------------
             * input_file: .py file where the values for all model parameters are defined
+            * temp_res (default = 1): 1: typical days optimization, 2: full horizon optimization (8760 hours)
             * optim_mode (default = 3): 1: for cost minimization, 2: for carbon minimization, 3: for multi-objective optimization
             * num_of_pareto_points (default = 5): In case optim_mode is set to 3, then this specifies the number of Pareto points
-            * temp_res (default = 1): 1: typical days optimization, 2: full horizon optimization (8760 hours)
         """
         import importlib
 
@@ -574,7 +575,7 @@ class EnergyHub:
         )
 
         def Storage_discharg_rate_constr_rule(m, t, out):
-            return m.Qout[t, out] <= m.Storage_max_charge[out] * m.Storage_cap[out]
+            return m.Qout[t, out] <= m.Storage_max_discharge[out] * m.Storage_cap[out]
 
         self.m.Storage_discharg_rate_constr = pe.Constraint(
             self.m.Time,
@@ -733,6 +734,8 @@ class EnergyHub:
                 * oper: Contains the generation, export and storage energy flows for all time steps considered. It is a single dataframe when optim_mode is 1 or 2 (single-objective) and a list of dataframes for each Pareto point when optim_mode is set to 3 (multi-objective).
         """
         solver = pyomo.opt.SolverFactory("gurobi")
+        solver.options["MIPGap"] = 0.05
+        solver.options["TimeLimit"] = 3600*96-300
 
         def get_design_results(model_instance):
             dsgn1 = pyio.get_entity(model_instance, "Capacity")
@@ -770,8 +773,12 @@ class EnergyHub:
             self.results = [None]
 
             self.m.Carbon_obj.deactivate()
-            solver.solve(self.m, tee=False, keepfiles=False)
-
+            results = solver.solve(self.m, tee=True, keepfiles=True, logfile="gur.log")
+            # results.write()
+            # print(results)
+            self.m.solutions.store_to(results)            
+            results.write(filename='results.json', format='json')            
+            
             # Save results
             self.results[0] = self.m.clone()
             obj = get_obj_results(self.m)
@@ -807,7 +814,6 @@ class EnergyHub:
             # -----------------
             self.m.Carbon_obj.deactivate()
             solver.solve(self.m, tee=False, keepfiles=False)
-            self.results[0] = self.m.clone()
             carb_max = pe.value(self.m.Total_carbon)
 
             # Save results
@@ -888,5 +894,9 @@ class EnergyHub:
 
 
 if __name__ == "__main__":
-    sp = EnergyHub("Input_data", 1, 3, 5)
+    sp = EnergyHub("Input_data", 1, 1, 1)
     (obj, dsgn, oper) = sp.solve()
+    myResultsFromStep1 = SolverResults()
+    sp.m.solutions.store_to(myResultsFromStep1)    
+    with open('test3.pkl', mode='wb') as file:
+        pickle.dump(myResultsFromStep1, file)
