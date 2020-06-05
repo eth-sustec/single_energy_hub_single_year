@@ -46,11 +46,10 @@ def get_all_vars(model_instance):
         "y_conv",
         "Conv_cap",
         "y_stor",
-        "Storage_cap"
+        "Storage_cap",
         "P_import",
         "P_conv",
         "P_export",
-        "P_exchange",
         "Qin",
         "Qout",
         "SoC",
