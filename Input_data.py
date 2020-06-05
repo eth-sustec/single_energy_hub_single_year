@@ -57,7 +57,7 @@ Roof_area = 1260
 
 # Generation technologies
 # -----------------------
-# Linear_inv_costs, Fixed_inv_costs, Lifetime_tech
+# Linear_conv_costs, Fixed_conv_costs, Lifetime_tech
 gen_tech = {    
     "PV": [300, 5750, 20],
     "ST": [1590, 7630, 20],
@@ -69,8 +69,8 @@ gen_tech = {
     "CHP": [3100, 43450, 20],
 }
 
-Linear_inv_costs = {key: gen_tech[key][0] for key in gen_tech.keys()}
-Fixed_inv_costs = {key: gen_tech[key][1] for key in gen_tech.keys()}
+Linear_conv_costs = {key: gen_tech[key][0] for key in gen_tech.keys()}
+Fixed_conv_costs = {key: gen_tech[key][1] for key in gen_tech.keys()}
 Lifetime_tech = {key: gen_tech[key][2] for key in gen_tech.keys()}
 
 Export_prices = {'Elec': 0.120}
