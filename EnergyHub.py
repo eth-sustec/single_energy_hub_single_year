@@ -55,7 +55,9 @@ class EnergyHub:
             doc="The number of days considered in each year of the model | Index: d",
         )       
         self.m.Time_steps = pe.Set(
-            initialize=self.inp.Time_steps, doc="Time steps considered in the model | Index: t"
+            initialize=self.inp.Time_steps, 
+            # ordererd=True,
+            doc="Time steps considered in the model | Index: t",
         )
 
         # Energy carriers
@@ -194,6 +196,7 @@ class EnergyHub:
         )
         self.m.Network_efficiency = pe.Param(
             self.m.Energy_carriers_dem,
+            default=1,
             initialize=self.inp.Network_efficiency,
             doc="The efficiency of the energy networks used by the energy hub",
         )
@@ -220,14 +223,14 @@ class EnergyHub:
             default=0,
             doc="Feed-in tariffs for exporting energy carriers back to the grid",
         )
-        self.m.Linear_inv_costs = pe.Param(
+        self.m.Linear_conv_costs = pe.Param(
             self.m.Conversion_tech,
-            initialize=self.inp.Linear_inv_costs,
+            initialize=self.inp.Linear_conv_costs,
             doc="Linear part of the investment cost (per kW or m2) for the generation technologies in the energy hub",
         )
-        self.m.Fixed_inv_costs = pe.Param(
+        self.m.Fixed_conv_costs = pe.Param(
             self.m.Conversion_tech,
-            initialize=self.inp.Fixed_inv_costs,
+            initialize=self.inp.Fixed_conv_costs,
             doc="Fixed part of the investment cost (per kW or m2) for the generation technologies in the energy hub",
         )
         self.m.Linear_stor_costs = pe.Param(
@@ -261,11 +264,11 @@ class EnergyHub:
             doc="Capital Recovery Factor (CRF) used to annualise the investment cost of generation technologies",
         )
 
-        def CRF_stor_rule(m, out):
+        def CRF_stor_rule(m, strg_tech):
             return (
                 self.m.Discount_rate
-                * (1 + self.m.Discount_rate) ** self.m.Lifetime_stor[out]
-            ) / ((1 + self.m.Discount_rate) ** self.m.Lifetime_stor[out] - 1)
+                * (1 + self.m.Discount_rate) ** self.m.Lifetime_stor[strg_tech]
+            ) / ((1 + self.m.Discount_rate) ** self.m.Lifetime_stor[strg_tech] - 1)
 
         self.m.CRF_stor = pe.Param(
             self.m.Storage_tech,
@@ -418,8 +421,9 @@ class EnergyHub:
         # ----------------------
         def Load_balance_rule(m, ec, d, t):
             return (
-                sum(m.P_conv[conv_tech, d, t] * m.Conv_factor[conv_tech, ec] for conv_tech in m.Conversion_tech) + 
-                sum(m.Storage_tech_coupling[strg_tech, ec] * (m.Qout[strg_tech, d, t] - m.Qin[strg_tech, d, t]) for strg_tech in m.Storage_tech)
+                (m.P_import[ec, d, t] if ec in m.Energy_carriers_imp else 0)
+                + sum(m.P_conv[conv_tech, d, t] * m.Conv_factor[conv_tech, ec] for conv_tech in m.Conversion_tech)
+                + sum(m.Storage_tech_coupling[strg_tech, ec] * (m.Qout[strg_tech, d, t] - m.Qin[strg_tech, d, t]) for strg_tech in m.Storage_tech)
                 == (m.Demands[ec, d, t] if ec in m.Energy_carriers_dem else 0) / (m.Network_efficiency[ec] if ec in m.Energy_carriers_dem else 1) + (m.P_export[ec, d, t] if ec in m.Energy_carriers_exp else 0) 
             )
 
@@ -434,7 +438,10 @@ class EnergyHub:
         # Generation constraints
         # ----------------------
         def Capacity_constraint_rule(m, disp, ec, d, t):
-            return m.P_conv[disp, d, t] * m.Conv_factor[disp, ec] <= m.Conv_cap[disp]
+            if m.Conv_factor[disp, ec] > 0:
+                return m.P_conv[disp, d, t] * m.Conv_factor[disp, ec] <= m.Conv_cap[disp]
+            else:
+                return pe.Constraint.Skip
 
         self.m.Capacity_constraint = pe.Constraint(
             self.m.Dispatchable_tech,
@@ -449,12 +456,9 @@ class EnergyHub:
             return m.P_conv[sol, d, t] == m.P_solar[d, t] * m.Conv_cap[sol]
 
         self.m.Solar_input = pe.Constraint(
-            (
-                (sol, d, t)
-                for sol in self.m.Solar_tech
-                for d in self.m.Days
-                for t in self.m.Time_steps                
-            ),
+            self.m.Solar_tech,
+            self.m.Days,
+            self.m.Time_steps,
             rule=Solar_input_rule,
             doc="Constraint connecting the solar radiation per m2 with the area of solar PV technologies",
         )
@@ -639,8 +643,8 @@ class EnergyHub:
                 m.Investment_cost
                 == sum(
                     (
-                        m.Fixed_inv_costs[conv_tech] * m.y_conv[conv_tech]
-                        + m.Linear_inv_costs[conv_tech] * m.Conv_cap[conv_tech]
+                        m.Fixed_conv_costs[conv_tech] * m.y_conv[conv_tech]
+                        + m.Linear_conv_costs[conv_tech] * m.Conv_cap[conv_tech]
                     )
                     * m.CRF_tech[conv_tech]
                     for conv_tech in m.Conversion_tech
