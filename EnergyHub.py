@@ -394,7 +394,7 @@ class EnergyHub:
 
         # Objective function components
         # -----------------------------
-        self.m.Operating_cost = pe.Var(
+        self.m.Import_cost = pe.Var(
             within=pe.NonNegativeReals,
             doc="The operating cost for the consumption of energy carriers",
         )
@@ -613,7 +613,7 @@ class EnergyHub:
         # ------------------------------
 
         def Import_cost_rule(m):
-            return m.Operating_cost == sum(
+            return m.Import_cost == sum(
                 m.Import_prices[ec_imp] * m.P_import[ec_imp, d, t] * m.Number_of_days[d]
                 for ec_imp in m.Energy_carriers_imp
                 for d in m.Days
@@ -668,7 +668,7 @@ class EnergyHub:
         def Total_cost_rule(m):
             return (
                 m.Total_cost
-                == m.Investment_cost + m.Operating_cost - m.Export_profit
+                == m.Investment_cost + m.Import_cost - m.Export_profit
             )
 
         self.m.Total_cost_def = pe.Constraint(
@@ -761,18 +761,18 @@ class EnergyHub:
             
             # Save results
             # ------------
-#            self.m.solutions.store_to(results)
-#            results.write(filename='cost_min_solver_results.json', format='json') # JSON file with results
-#            of.pickle_solver_results(sp.m, 'cost_min_solver_results.p') # Write a pickle file with the SolverResults object
+            self.m.solutions.store_to(results)
+            results.write(filename='cost_min_solver_results.json', format='json') # JSON file with results
+            of.pickle_solver_results(sp.m, 'cost_min_solver_results.p') # Write a pickle file with the SolverResults object
 #            
 #            obj[0] = of.get_obj_results(self.m)
 #            dsgn[0] = of.get_design_results(self.m)
 #            oper[0] = of.get_oper_results(self.m)
 #            
-#            all_vars[0] = of.get_all_vars(self.m)
-#            file = open("cost_min.p", "wb")
-#            pkl.dump(all_vars, file)
-#            file.close()
+            all_vars[0] = of.get_all_vars(self.m)
+            file = open("cost_min.p", "wb")
+            pkl.dump(all_vars, file)
+            file.close()
 
         
         elif self.optim_mode == 2:
@@ -824,9 +824,9 @@ class EnergyHub:
 
             # Save results
             # ------------
-#            self.m.solutions.store_to(results)
-#            results.write(filename='MO_solver_results_1.json', format='json') # JSON file with results            
-#            of.pickle_solver_results(sp.m, 'MO_solver_results_1.p') # Write a pickle file with the SolverResults object
+            self.m.solutions.store_to(results)
+            results.write(filename='MO_solver_results_1.json', format='json') # JSON file with results            
+            of.pickle_solver_results(sp.m, 'MO_solver_results_1.p') # Write a pickle file with the SolverResults object
 #            
 #            obj[0] = of.get_obj_results(self.m)
 #            dsgn[0] = of.get_design_results(self.m)
