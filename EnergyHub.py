@@ -22,7 +22,7 @@ class EnergyHub:
         Inputs to the function:
         -----------------------
             * input_file: .py file where the values for all model parameters are defined
-            * temp_res (default = 1): 1: typical days optimization, 2: full horizon optimization (8760 hours)
+            * temp_res (default = 1): 1: typical days optimization, 2: full horizon optimization (8760 hours), 3: typical days with continous storage state-of-charge
             * optim_mode (default = 3): 1: for cost minimization, 2: for carbon minimization, 3: for multi-objective optimization
             * num_of_pareto_points (default = 5): In case optim_mode is set to 3, then this specifies the number of Pareto points
         """
@@ -58,6 +58,11 @@ class EnergyHub:
             initialize=self.inp.Time_steps, 
             # ordererd=True,
             doc="Time steps considered in the model | Index: t",
+        )
+        self.m.Calendar_days = pe.Set(
+            initialize=list(range(1, 365+1)),
+            ordered=True,
+            doc="Set for each calendar day of a full year"
         )
 
         # Energy carriers
@@ -116,7 +121,7 @@ class EnergyHub:
             initialize=self.inp.Demands,
             doc="Time-varying energy demand patterns for the energy hub",
         )
-        if self.temp_res == 1:
+        if self.temp_res == 1 or self.temp_res == 3:
             self.m.Number_of_days = pe.Param(
                 self.m.Days,
                 default=1,
@@ -130,6 +135,13 @@ class EnergyHub:
                 default=1,
                 initialize=1,
                 doc="Parameter equal to 1 for each time step, because full horizon optimization is performed (temp_res == 2)",
+            )
+        if self.temp_res == 3:
+            self.m.C_to_T = pe.Param(
+                self.m.Calendar_days,
+                initialize=self.inp.C_to_T,
+                within=self.m.Days,
+                doc="Parameter to match each calendar day of a full year to a typical day for optimization"
             )
 
         # Technical parameters
@@ -374,13 +386,22 @@ class EnergyHub:
             within=pe.NonNegativeReals,
             doc="Storage discharging rate",
         )
-        self.m.SoC = pe.Var(
-            self.m.Storage_tech,
-            self.m.Days,
-            self.m.Time_steps,
-            within=pe.NonNegativeReals,
-            doc="Storage state of charge",
-        )
+        if self.temp_res != 3:
+            self.m.SoC = pe.Var(
+                self.m.Storage_tech,
+                self.m.Days,
+                self.m.Time_steps,
+                within=pe.NonNegativeReals,
+                doc="Storage state of charge",
+            )
+        else:
+            self.m.SoC = pe.Var(
+                self.m.Storage_tech,
+                self.m.Calendar_days,
+                self.m.Time_steps,
+                within=pe.NonNegativeReals,
+                doc="Storage state of charge",
+            )
         self.m.y_stor = pe.Var(
             self.m.Storage_tech,
             within=pe.Binary,
@@ -519,21 +540,29 @@ class EnergyHub:
         # -------------------
 
         def Storage_balance_rule(m, strg_tech, d, t):
-            if t != 1:
-                return (
-                    m.SoC[strg_tech, d, t]
-                    == (1 - m.Storage_standing_losses[strg_tech]) * m.SoC[strg_tech, d, t-1]
-                    + m.Storage_charging_eff[strg_tech] * m.Qin[strg_tech, d, t]
-                    - (1 / m.Storage_discharging_eff[strg_tech]) * m.Qout[strg_tech, d, t]
-                )
-            else:
-                if self.temp_res == 1:
+            if self.temp_res == 1:
+                if t != 1:
                     return (
+                        m.SoC[strg_tech, d, t]
+                        == (1 - m.Storage_standing_losses[strg_tech]) * m.SoC[strg_tech, d, t-1]
+                        + m.Storage_charging_eff[strg_tech] * m.Qin[strg_tech, d, t]
+                        - (1 / m.Storage_discharging_eff[strg_tech]) * m.Qout[strg_tech, d, t]
+                    )
+                else:
+                     return (
                         m.SoC[strg_tech, d, t]
                         == (1 - m.Storage_standing_losses[strg_tech]) * m.SoC[strg_tech, d, t+23]
                         + m.Storage_charging_eff[strg_tech] * m.Qin[strg_tech, d, t]
                         - (1 / m.Storage_discharging_eff[strg_tech]) * m.Qout[strg_tech, d, t]
                     )
+            elif self.temp_res == 2:
+                if t != 1:
+                    return (
+                    m.SoC[strg_tech, d, t]
+                    == (1 - m.Storage_standing_losses[strg_tech]) * m.SoC[strg_tech, d, t-1]
+                    + m.Storage_charging_eff[strg_tech] * m.Qin[strg_tech, d, t]
+                    - (1 / m.Storage_discharging_eff[strg_tech]) * m.Qout[strg_tech, d, t]
+                )
                 else:
                     if d != 1:
                         return (
@@ -549,14 +578,46 @@ class EnergyHub:
                             + m.Storage_charging_eff[strg_tech] * m.Qin[strg_tech, d, t]
                             - (1 / m.Storage_discharging_eff[strg_tech]) * m.Qout[strg_tech, d, t]
                         )
+            elif self.temp_res == 3:
+                if t != 1:
+                    return (
+                    m.SoC[strg_tech, d, t]
+                    == (1 - m.Storage_standing_losses[strg_tech]) * m.SoC[strg_tech, d, t-1]
+                    + m.Storage_charging_eff[strg_tech] * m.Qin[strg_tech, m.C_to_T[d], t]
+                    - (1 / m.Storage_discharging_eff[strg_tech]) * m.Qout[strg_tech, m.C_to_T[d], t]
+                )
+                else:
+                    if d != 1:
+                        return (
+                            m.SoC[strg_tech, d, t]
+                            == (1 - m.Storage_standing_losses[strg_tech]) * m.SoC[strg_tech, d-1, t+23]
+                            + m.Storage_charging_eff[strg_tech] * m.Qin[strg_tech, m.C_to_T[d], t]
+                            - (1 / m.Storage_discharging_eff[strg_tech]) * m.Qout[strg_tech, m.C_to_T[d], t]
+                        )
+                    else:
+                        return (
+                            m.SoC[strg_tech, d, t]
+                            == (1 - m.Storage_standing_losses[strg_tech]) * m.SoC[strg_tech, d+364, t+23]
+                            + m.Storage_charging_eff[strg_tech] * m.Qin[strg_tech, m.C_to_T[d], t]
+                            - (1 / m.Storage_discharging_eff[strg_tech]) * m.Qout[strg_tech, m.C_to_T[d], t]
+                        )
 
-        self.m.Storage_balance = pe.Constraint(
-            self.m.Storage_tech,
-            self.m.Days,
-            self.m.Time_steps,
-            rule=Storage_balance_rule,
-            doc="Energy balance for the storage modules considering incoming and outgoing energy flows",
-        )
+        if self.temp_res == 1 or self.temp_res == 2:
+            self.m.Storage_balance = pe.Constraint(
+                self.m.Storage_tech,
+                self.m.Days,
+                self.m.Time_steps,
+                rule=Storage_balance_rule,
+                doc="Energy balance for the storage modules considering incoming and outgoing energy flows",
+            )
+        elif self.temp_res == 3:
+            self.m.Storage_balance = pe.Constraint(
+                self.m.Storage_tech,
+                self.m.Calendar_days,
+                self.m.Time_steps,
+                rule=Storage_balance_rule,
+                doc="Energy balance for the storage modules considering incoming and outgoing energy flows",
+            )
 
         def Storage_charg_rate_constr_rule(m, strg_tech, d, t):
             return m.Qin[strg_tech, d, t] <= m.Storage_max_charge[strg_tech] * m.Storage_cap[strg_tech]
@@ -763,12 +824,12 @@ class EnergyHub:
             # ------------
             self.m.solutions.store_to(results)
             results.write(filename='cost_min_solver_results.json', format='json') # JSON file with results
-            of.pickle_solver_results(sp.m, 'cost_min_solver_results.p') # Write a pickle file with the SolverResults object
-#            
-#            obj[0] = of.get_obj_results(self.m)
-#            dsgn[0] = of.get_design_results(self.m)
-#            oper[0] = of.get_oper_results(self.m)
-#            
+            of.pickle_solver_results(self.m, 'cost_min_solver_results.p') # Write a pickle file with the SolverResults object
+            
+            obj[0] = of.get_obj_results(self.m)
+            dsgn[0] = of.get_design_results(self.m)
+            oper[0] = of.get_oper_results(self.m)
+            
             all_vars[0] = of.get_all_vars(self.m)
             file = open("cost_min.p", "wb")
             pkl.dump(all_vars, file)
@@ -796,18 +857,18 @@ class EnergyHub:
 
             # Save results
             # ------------
-#            self.m.solutions.store_to(results)
-#            results.write(filename='carb_min_solver_results.json', format='json') # JSON file with results
-#            of.pickle_solver_results(sp.m, 'carb_min_solver_results.p') # Write a pickle file with the SolverResults object
-#            
-#            obj[0] = of.get_obj_results(self.m)
-#            dsgn[0] = of.get_design_results(self.m)
-#            oper[0] = of.get_oper_results(self.m)
-#            
-#            all_vars[0] = of.get_all_vars(self.m)
-#            file = open("carb_min.p", "wb")
-#            pkl.dump(all_vars, file)
-#            file.close()
+            self.m.solutions.store_to(results)
+            results.write(filename='carb_min_solver_results.json', format='json') # JSON file with results
+            of.pickle_solver_results(self.m, 'carb_min_solver_results.p') # Write a pickle file with the SolverResults object
+            
+            obj[0] = of.get_obj_results(self.m)
+            dsgn[0] = of.get_design_results(self.m)
+            oper[0] = of.get_oper_results(self.m)
+            
+            all_vars[0] = of.get_all_vars(self.m)
+            file = open("carb_min.p", "wb")
+            pkl.dump(all_vars, file)
+            file.close()
 
         else:
 
@@ -826,12 +887,12 @@ class EnergyHub:
             # ------------
             self.m.solutions.store_to(results)
             results.write(filename='MO_solver_results_1.json', format='json') # JSON file with results            
-            of.pickle_solver_results(sp.m, 'MO_solver_results_1.p') # Write a pickle file with the SolverResults object
-#            
-#            obj[0] = of.get_obj_results(self.m)
-#            dsgn[0] = of.get_design_results(self.m)
-#            oper[0] = of.get_oper_results(self.m)
-#            all_vars[0] = of.get_all_vars(self.m)
+            of.pickle_solver_results(self.m, 'MO_solver_results_1.p') # Write a pickle file with the SolverResults object
+            
+            obj[0] = of.get_obj_results(self.m)
+            dsgn[0] = of.get_design_results(self.m)
+            oper[0] = of.get_oper_results(self.m)
+            all_vars[0] = of.get_all_vars(self.m)
 
             # Carbon minimization
             # -------------------
@@ -850,14 +911,14 @@ class EnergyHub:
 
                 # Save results
                 # ------------
-#                self.m.solutions.store_to(results)
-#                results.write(filename='MO_solver_results_2.json', format='json') # JSON file with results
-#                of.pickle_solver_results(sp.m, 'MO_solver_results_2.p') # Write a pickle file with the SolverResults object
-#
-#                obj[1] = of.get_obj_results(self.m)
-#                dsgn[1] = of.get_design_results(self.m)
-#                oper[1] = of.get_oper_results(self.m)
-#                all_vars[1] = of.get_all_vars(self.m)
+                self.m.solutions.store_to(results)
+                results.write(filename='MO_solver_results_2.json', format='json') # JSON file with results
+                of.pickle_solver_results(sp.m, 'MO_solver_results_2.p') # Write a pickle file with the SolverResults object
+
+                obj[1] = of.get_obj_results(self.m)
+                dsgn[1] = of.get_design_results(self.m)
+                oper[1] = of.get_oper_results(self.m)
+                all_vars[1] = of.get_all_vars(self.m)
 
             else:
                 self.m.Carbon_obj.deactivate()
@@ -874,48 +935,22 @@ class EnergyHub:
 
                     # Save results
                     # ------------
-#                    self.m.solutions.store_to(results)
-#                    results.write(filename='MO_solver_results_'+str(i+1)+'.json', format='json') # JSON file with results
-#                    of.pickle_solver_results(sp.m, 'MO_solver_results_'+str(i+1)+'.p') # Write a pickle file with the SolverResults object
-#                    
-#                    obj[i] = of.get_obj_results(self.m)
-#                    dsgn[i] = of.get_design_results(self.m)
-#                    oper[i] = of.get_oper_results(self.m)
-#                    all_vars[i] = of.get_all_vars(self.m)
-#
-#            file = open("multi_obj.p", "wb")
-#            pkl.dump(all_vars, file)
-#            file.close()
+                    self.m.solutions.store_to(results)
+                    results.write(filename='MO_solver_results_'+str(i+1)+'.json', format='json') # JSON file with results
+                    of.pickle_solver_results(sp.m, 'MO_solver_results_'+str(i+1)+'.p') # Write a pickle file with the SolverResults object
                     
-        # Beautification
-        # --------------
-#        obj.index.name = "Pareto front points"
-#        dsgn.rename(columns={"Heat": "Heat stor", "Elec": "Elec stor"}, inplace=True)
-#        dsgn.index.name = "Pareto front points"
-#
-#        if self.optim_mode == 1:
-#            obj[0].index = ["Min_cost"]
-#            dsgn[0].index = ["Min_cost"]
-#            oper[0].index.name = "Time"
-#        elif self.optim_mode == 2:
-#            obj[0].index = ["Min_carb"]
-#            dsgn[0].index = ["Min_carb"]
-#            oper[0].index.name = "Time"
-#        else:
-#            obj.index = (
-#                ["Min_cost"]
-#                + ["PFP" + str(i) for i in range(2, self.num_of_pfp + 1 + 1)]
-#                + ["Min_carb"]
-#            )
-#            dsgn.index = (
-#                ["Min_cost"]
-#                + ["PFP" + str(i) for i in range(2, self.num_of_pfp + 1 + 1)]
-#                + ["Min_carb"]
-#            )
-#        return obj, dsgn, oper
+                    obj[i] = of.get_obj_results(self.m)
+                    dsgn[i] = of.get_design_results(self.m)
+                    oper[i] = of.get_oper_results(self.m)
+                    all_vars[i] = of.get_all_vars(self.m)
+
+            file = open("multi_obj.p", "wb")
+            pkl.dump(all_vars, file)
+            file.close()
+                    
+        return obj, dsgn, oper
 
 if __name__ == "__main__":
     sp = EnergyHub("Input_data", 1, 1, 1)
     sp.create_model() # Create model
-#    (obj, dsgn, oper) = sp.solve()    
-    sp.solve()
+    (obj, dsgn, oper) = sp.solve()    
