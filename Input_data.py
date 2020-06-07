@@ -39,6 +39,13 @@ Number_of_days = pd.read_excel(
 Number_of_days = Number_of_days.to_dict()
 Number_of_days = Number_of_days["Number_of_days"]
 
+C_to_T = pd.read_excel(
+    "Time_series_inputs.xlsx", usecols="A:B", index_col=0, header=None, sheet_name="C_to_T_matching"
+)  # Read from some Excel/.csv file
+C_to_T = C_to_T.to_dict()
+C_to_T = C_to_T[1]
+
+
 P_solar = pd.read_excel(
     "Time_series_inputs.xlsx", usecols="A:B,E", index_col=[0,1], header=[0], sheet_name="Loads_solar"
 )  # Read from some Excel/.csv file
