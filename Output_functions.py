@@ -6,7 +6,7 @@ import pickle as pkl
 def get_design_results(model_instance):
     """
     Gets a Pyomo model_instance as input and returns a Pandas Series with all the results regarding the design of the energy system
-    """
+    """    
     dsgn1 = pyio.get_entity(model_instance, "Conv_cap")
     dsgn2 = pyio.get_entity(model_instance, "Storage_cap")
     dsgn = pd.concat([dsgn1, dsgn2])
@@ -18,11 +18,15 @@ def get_oper_results(model_instance):
     """
     Gets a Pyomo model_instance as input and returns a Pandas DataFrame with all the results regarding the operation of the energy system
     """
-    oper1 = pyio.get_entities(model_instance, "P_conv").unstack()
-    oper2 = pyio.get_entities(
-        model_instance, ["P_import", "P_conv", "P_export", "Qin", "Qout", "SoC"]
-    ).unstack()
-    oper = pd.merge(oper1, oper2, left_index=True, right_index=True)
+    oper_vars = ["P_import", "P_conv", "P_export", "Qin", "Qout", "SoC"]
+    dummy = [None] * len(oper_vars)
+    for v, var in enumerate(oper_vars):
+        dummy[v] = pyio.get_entity(model_instance, var).unstack(level=0).add_prefix(var+"[").add_suffix("]")
+    
+    oper = dummy[0]    
+    for v in range(1, len(oper_vars)):
+        oper = pd.merge(oper, dummy[v], left_index=True, right_index=True)
+    
     return oper
 
 def get_obj_results(model_instance):
