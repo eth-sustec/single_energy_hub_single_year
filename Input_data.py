@@ -29,25 +29,41 @@ Energy_carriers_dem = ["Heat", "Elec"]
 # Defining input values for model parameters
 # ==========================================
 Demands = pd.read_excel(
-    "Time_series_inputs.xlsx", usecols="A:D", index_col=[0,1], header=[0], sheet_name="Loads_solar"
+    "Time_series_inputs.xlsx",
+    usecols="A:D",
+    index_col=[0, 1],
+    header=[0],
+    sheet_name="Loads_solar",
 )  # Read from some Excel/.csv file
-Demands = Demands.stack().reorder_levels([2,0,1]).to_dict()
+Demands = Demands.stack().reorder_levels([2, 0, 1]).to_dict()
 
 Number_of_days = pd.read_excel(
-    "Time_series_inputs.xlsx", usecols="A:B", index_col=0, header=0, sheet_name="Number_of_days"
+    "Time_series_inputs.xlsx",
+    usecols="A:B",
+    index_col=0,
+    header=0,
+    sheet_name="Number_of_days",
 )  # Read from some Excel/.csv file
 Number_of_days = Number_of_days.to_dict()
 Number_of_days = Number_of_days["Number_of_days"]
 
 C_to_T = pd.read_excel(
-    "Time_series_inputs.xlsx", usecols="A:B", index_col=0, header=None, sheet_name="C_to_T_matching"
+    "Time_series_inputs.xlsx",
+    usecols="A:B",
+    index_col=0,
+    header=None,
+    sheet_name="C_to_T_matching",
 )  # Read from some Excel/.csv file
 C_to_T = C_to_T.to_dict()
 C_to_T = C_to_T[1]
 
 
 P_solar = pd.read_excel(
-    "Time_series_inputs.xlsx", usecols="A:B,E", index_col=[0,1], header=[0], sheet_name="Loads_solar"
+    "Time_series_inputs.xlsx",
+    usecols="A:B,E",
+    index_col=[0, 1],
+    header=[0],
+    sheet_name="Loads_solar",
 )  # Read from some Excel/.csv file
 P_solar = P_solar.to_dict()
 P_solar = P_solar["P_solar"]
@@ -65,7 +81,7 @@ Roof_area = 1260
 # Generation technologies
 # -----------------------
 # Linear_conv_costs, Fixed_conv_costs, Lifetime_tech
-gen_tech = {    
+gen_tech = {
     "PV": [300, 5750, 20],
     "ST": [1590, 7630, 20],
     "ASHP": [1530, 6830, 20],
@@ -80,9 +96,9 @@ Linear_conv_costs = {key: gen_tech[key][0] for key in gen_tech.keys()}
 Fixed_conv_costs = {key: gen_tech[key][1] for key in gen_tech.keys()}
 Lifetime_tech = {key: gen_tech[key][2] for key in gen_tech.keys()}
 
-Export_prices = {'Elec': 0.120}
-Import_prices = {'Elec': 0.256, 'NatGas': 0.113, 'Oil': 0.106, "Biomass": 0.100}
-Carbon_factors_import = {'Elec': 0.0095, 'NatGas': 0.198, 'Oil': 0.265, "Biomass": 0.0}
+Export_prices = {"Elec": 0.120}
+Import_prices = {"Elec": 0.256, "NatGas": 0.113, "Oil": 0.106, "Biomass": 0.100}
+Carbon_factors_import = {"Elec": 0.0095, "NatGas": 0.198, "Oil": 0.265, "Biomass": 0.0}
 
 Conv_factor = {
     ("PV", "Elec"): 0.15,
@@ -131,6 +147,6 @@ Storage_max_cap = {key: stor_tech[key][7] for key in stor_tech.keys()}
 Lifetime_stor = {key: stor_tech[key][8] for key in stor_tech.keys()}
 
 Storage_tech_coupling = {
-        ("Thermal_storage_tank","Heat"): 1.0,
-        ("Battery", "Elec"): 1.0
+    ("Thermal_storage_tank", "Heat"): 1.0,
+    ("Battery", "Elec"): 1.0,
 }
