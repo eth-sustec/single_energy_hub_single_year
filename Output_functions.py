@@ -58,7 +58,7 @@ def get_retrofit_results(model_instance):
     """
     Gets a Pyomo model_instance as input and returns a Pandas Series with all the results regarding the retrofit scenarios
     """
-    ret = pyio.get_entity(model_instance, "y_ret")
+    ret = pyio.get_entity(model_instance, "y_retrofit")
     return ret
 
 
