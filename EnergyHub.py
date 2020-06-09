@@ -1002,7 +1002,7 @@ class EnergyHub:
                         format="json",
                     )  # JSON file with results
                     of.pickle_solver_results(
-                        sp.m, "MO_solver_results_" + str(i + 1) + ".p"
+                        self.m, "MO_solver_results_" + str(i + 1) + ".p"
                     )  # Write a pickle file with the SolverResults object
 
                     obj[i] = of.get_obj_results(self.m)
