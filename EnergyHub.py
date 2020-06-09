@@ -1,21 +1,16 @@
 # -*- coding: utf-8 -*-
 """
 Single energy hub - single stage model for the optimal design of a distributed energy system
-
-@author: Georgios Mavromatidis (ETH Zurich, gmavroma@ethz.ch)
-
+Author: Georgios Mavromatidis (ETH Zurich, gmavroma@ethz.ch)
 """
 
 import pyomo
 import pyomo.opt
 import pyomo.environ as pe
-import pyomoio as pyio
-from pyomo.opt import SolverResults
 
-import pandas as pd
+# import pandas as pd
 import numpy as np
-import cloudpickle 
-import pickle
+
 
 class EnergyHub:
     """This class implements a standard energy hub model for the optimal design and operation of distributed multi-energy systems"""
@@ -27,14 +22,13 @@ class EnergyHub:
         Inputs to the function:
         -----------------------
             * input_file: .py file where the values for all model parameters are defined
-            * temp_res (default = 1): 1: typical days optimization, 2: full horizon optimization (8760 hours)
+            * temp_res (default = 1): 1: typical days optimization, 2: full horizon optimization (8760 hours), 3: typical days with continous storage state-of-charge
             * optim_mode (default = 3): 1: for cost minimization, 2: for carbon minimization, 3: for multi-objective optimization
             * num_of_pareto_points (default = 5): In case optim_mode is set to 3, then this specifies the number of Pareto points
         """
         import importlib
 
-        self.InputFile = input_file
-        self.inp = importlib.import_module(self.InputFile)
+        self.inp = importlib.import_module(input_file)
         self.temp_res = temp_res
         self.optim_mode = optim_mode
         if self.optim_mode == 1 or self.optim_mode == 2:
@@ -44,66 +38,74 @@ class EnergyHub:
             )
         else:
             self.num_of_pfp = num_of_pareto_points
-        self.createModel()
 
-    def createModel(self):
-        """Create the Pyomo energy hub model given the input data specified in the self.InputFile"""
+    def create_model(self):
+        """Create the Pyomo energy hub model given the input data specified in the input_file"""
 
         self.m = pe.ConcreteModel()
 
         # Model sets
         # ==========
-        self.m.Time = pe.Set(
-            initialize=self.inp.Time, doc="Time steps considered in the model"
+
+        # Temporal dimensions
+        # -------------------
+        self.m.Days = pe.Set(
+            initialize=self.inp.Days,
+            ordered=True,
+            doc="The number of days considered in each year of the model | Index: d",
+        )
+        self.m.Time_steps = pe.Set(
+            initialize=self.inp.Time_steps,
+            # ordererd=True,
+            doc="Time steps considered in the model | Index: t",
+        )
+        self.m.Calendar_days = pe.Set(
+            initialize=list(range(1, 365 + 1)),
+            ordered=True,
+            doc="Set for each calendar day of a full year",
         )
 
-        def First_hour_rule(m):
-            if self.temp_res == 1:
-                return list(range(1, self.inp.Number_of_time_steps + 1, 24))
-            else:
-                return 1
+        # Energy carriers
+        # ---------------
+        self.m.Energy_carriers = pe.Set(
+            initialize=self.inp.Energy_carriers,
+            doc="The set of all energy carriers considered in the model | Index : ec",
+        )
+        self.m.Energy_carriers_imp = pe.Set(
+            initialize=self.inp.Energy_carriers_imp,
+            within=self.m.Energy_carriers,
+            doc="The set of energy carriers for which imports are possible | Index : ec_imp",
+        )
+        self.m.Energy_carriers_exp = pe.Set(
+            initialize=self.inp.Energy_carriers_exp,
+            within=self.m.Energy_carriers,
+            doc="The set of energy carriers for which exports are possible | Index : ec_exp",
+        )
+        self.m.Energy_carriers_dem = pe.Set(
+            initialize=self.inp.Energy_carriers_dem,
+            within=self.m.Energy_carriers,
+            doc="The set of energy carriers for which end-user demands are defined | Index : ec_dem",
+        )
 
-        self.m.First_hour = pe.Set(
-            initialize=First_hour_rule,
-            within=self.m.Time,
-            doc="if temp_res == 1: The first hour of each typical day considered in the model | if temp_res == 2, it is the first hour of the year (i.e. First_hour = 1)",
+        # Technologies
+        # ------------
+        self.m.Conversion_tech = pe.Set(
+            initialize=self.inp.Conversion_tech,
+            doc="The energy conversion technologies of each energy hub candidate site | Index : conv_tech",
         )
-        self.m.Inputs = pe.Set(
-            initialize=self.inp.Inputs,
-            doc="The energy conversion technologies of the energy hub",
+        self.m.Solar_tech = pe.Set(
+            initialize=self.inp.Solar_tech,
+            within=self.m.Conversion_tech,
+            doc="Subset for solar technologies | Index : sol",
         )
-        self.m.Buildings = pe.RangeSet(
-            1,
-            self.inp.Number_of_buildings,
-            doc="Number of buildings considered for solar installations",
+        self.m.Dispatchable_tech = pe.Set(
+            initialize=self.inp.Dispatchable_tech,
+            within=self.m.Conversion_tech,
+            doc="Subset for dispatchable/controllable technologies | Index : disp",
         )
-        self.m.Solar_pv_inputs = pe.Set(
-            initialize=self.inp.Solar_pv_inputs,
-            within=self.m.Inputs,
-            doc="Solar PV technologies",
-        )
-        self.m.Solar_th_inputs = pe.Set(
-            initialize=self.inp.Solar_th_inputs,
-            within=self.m.Inputs,
-            doc="Solar thermal technologies",
-        )
-        self.m.Inputs_wo_grid = pe.Set(
-            initialize=self.inp.Inputs_wo_grid,
-            doc="Subset of input energy streams without the grid",
-        )
-        self.m.Dispatchable_Tech = pe.Set(
-            initialize=self.inp.Dispatchable_Tech,
-            within=self.m.Inputs,
-            doc="Subset for dispatchable/controllable technologies",
-        )
-        self.m.CHP_Tech = pe.Set(
-            initialize=self.inp.CHP_Tech,
-            within=self.m.Inputs,
-            doc="Subset of CHP engine technologies",
-        )
-        self.m.Outputs = pe.Set(
-            initialize=self.inp.Outputs,
-            doc="Types of energy demands that the energy hub must supply",
+        self.m.Storage_tech = pe.Set(
+            initialize=self.inp.Storage_tech,
+            doc="The set of energy storage technologies for each energy hub candidate site | Index : strg_tech",
         )
 
         # Model parameters
@@ -111,85 +113,102 @@ class EnergyHub:
 
         # Load parameters
         # ---------------
-        self.m.Loads = pe.Param(
-            self.m.Time,
-            self.m.Outputs,
+        self.m.Demands = pe.Param(
+            self.m.Energy_carriers_dem,
+            self.m.Days,
+            self.m.Time_steps,
             default=0,
-            initialize=self.inp.Loads,
+            initialize=self.inp.Demands,
             doc="Time-varying energy demand patterns for the energy hub",
         )
-        if self.temp_res == 1:
+        if self.temp_res == 1 or self.temp_res == 3:
             self.m.Number_of_days = pe.Param(
-                self.m.Time,
+                self.m.Days,
                 default=1,
                 initialize=self.inp.Number_of_days,
                 doc="The number of days that each time step of typical day corresponds to",
             )
         else:
             self.m.Number_of_days = pe.Param(
-                self.m.Time,
+                self.m.Days,
+                self.m.Time_steps,
                 default=1,
                 initialize=1,
                 doc="Parameter equal to 1 for each time step, because full horizon optimization is performed (temp_res == 2)",
             )
+        if self.temp_res == 3:
+            self.m.C_to_T = pe.Param(
+                self.m.Calendar_days,
+                initialize=self.inp.C_to_T,
+                within=self.m.Days,
+                doc="Parameter to match each calendar day of a full year to a typical day for optimization",
+            )
 
         # Technical parameters
         # --------------------
-        self.m.Cmatrix = pe.Param(
-            self.m.Outputs,
-            self.m.Inputs,
+        self.m.Conv_factor = pe.Param(
+            self.m.Conversion_tech,
+            self.m.Energy_carriers,
             default=0,
-            initialize=self.inp.Cmatrix,
-            doc="The coupling matrix of the energy hub",
+            initialize=self.inp.Conv_factor,
+            doc="The conversion factors of the technologies in the energy hub",
         )
         self.m.Minimum_part_load = pe.Param(
-            self.m.Dispatchable_Tech,
+            self.m.Dispatchable_tech,
             default=0,
             initialize=self.inp.Minimum_part_load,
             doc="Minimum allowable part-load during the operation of dispatchable technologies",
         )
+        self.m.Lifetime_tech = pe.Param(
+            self.m.Conversion_tech,
+            initialize=self.inp.Lifetime_tech,
+            doc="Lifetime of energy generation technologies",
+        )
+        self.m.Storage_tech_coupling = pe.Param(
+            self.m.Storage_tech,
+            self.m.Energy_carriers,
+            initialize=self.inp.Storage_tech_coupling,
+            default=0,
+            doc="Par",
+        )
         self.m.Storage_max_charge = pe.Param(
-            self.m.Outputs,
+            self.m.Storage_tech,
             initialize=self.inp.Storage_max_charge,
             doc="Maximum charging rate in % of the total capacity for the storage technologies",
         )
         self.m.Storage_max_discharge = pe.Param(
-            self.m.Outputs,
+            self.m.Storage_tech,
             initialize=self.inp.Storage_max_discharge,
             doc="Maximum discharging rate in % of the total capacity for the storage technologies",
         )
         self.m.Storage_standing_losses = pe.Param(
-            self.m.Outputs,
+            self.m.Storage_tech,
             initialize=self.inp.Storage_standing_losses,
             doc="Standing losses for the storage technologies",
         )
         self.m.Storage_charging_eff = pe.Param(
-            self.m.Outputs,
+            self.m.Storage_tech,
             initialize=self.inp.Storage_charging_eff,
             doc="Efficiency of charging process for the storage technologies",
         )
         self.m.Storage_discharging_eff = pe.Param(
-            self.m.Outputs,
+            self.m.Storage_tech,
             initialize=self.inp.Storage_discharging_eff,
             doc="Efficiency of discharging process for the storage technologies",
         )
         self.m.Storage_max_cap = pe.Param(
-            self.m.Outputs,
+            self.m.Storage_tech,
             initialize=self.inp.Storage_max_cap,
             doc="Maximum allowable energy storage capacity per technology type",
         )
-        self.m.Lifetime_tech = pe.Param(
-            self.m.Inputs,
-            initialize=self.inp.Lifetime_tech,
-            doc="Lifetime of energy generation technologies",
-        )
         self.m.Lifetime_stor = pe.Param(
-            self.m.Outputs,
+            self.m.Storage_tech,
             initialize=self.inp.Lifetime_stor,
             doc="Lifetime of energy storage technologies",
         )
         self.m.Network_efficiency = pe.Param(
-            self.m.Outputs,
+            self.m.Energy_carriers_dem,
+            default=1,
             initialize=self.inp.Network_efficiency,
             doc="The efficiency of the energy networks used by the energy hub",
         )
@@ -204,28 +223,35 @@ class EnergyHub:
 
         # Cost parameters
         # ---------------
-        self.m.Operating_costs = pe.Param(
-            self.m.Inputs,
-            initialize=self.inp.Operating_costs,
-            doc="Energy carrier costs at the input of the energy hub",
+        self.m.Import_prices = pe.Param(
+            self.m.Energy_carriers_imp,
+            initialize=self.inp.Import_prices,
+            default=0,
+            doc="Prices for importing energy carriers from the grid",
         )
-        self.m.Linear_inv_costs = pe.Param(
-            self.m.Inputs,
-            initialize=self.inp.Linear_inv_costs,
+        self.m.Export_prices = pe.Param(
+            self.m.Energy_carriers_exp,
+            initialize=self.inp.Export_prices,
+            default=0,
+            doc="Feed-in tariffs for exporting energy carriers back to the grid",
+        )
+        self.m.Linear_conv_costs = pe.Param(
+            self.m.Conversion_tech,
+            initialize=self.inp.Linear_conv_costs,
             doc="Linear part of the investment cost (per kW or m2) for the generation technologies in the energy hub",
         )
-        self.m.Fixed_inv_costs = pe.Param(
-            self.m.Inputs,
-            initialize=self.inp.Fixed_inv_costs,
+        self.m.Fixed_conv_costs = pe.Param(
+            self.m.Conversion_tech,
+            initialize=self.inp.Fixed_conv_costs,
             doc="Fixed part of the investment cost (per kW or m2) for the generation technologies in the energy hub",
         )
         self.m.Linear_stor_costs = pe.Param(
-            self.m.Outputs,
+            self.m.Storage_tech,
             initialize=self.inp.Linear_stor_costs,
             doc="Linear part of the investment cost (per kWh) for the storage technologies in the energy hub",
         )
         self.m.Fixed_stor_costs = pe.Param(
-            self.m.Outputs,
+            self.m.Storage_tech,
             initialize=self.inp.Fixed_stor_costs,
             doc="Fixed part of the investment cost (per kWh) for the storage technologies in the energy hub",
         )
@@ -233,45 +259,40 @@ class EnergyHub:
             initialize=self.inp.Network_inv_cost_per_m,
             doc="Investment cost per pipe m of the thermal network of the energy hub",
         )
-        self.m.FiT = pe.Param(
-            self.m.Outputs,
-            initialize=self.inp.FiT,
-            doc="Feed-in tariffs for exporting electricity back to the grid",
-        )
-        self.m.Interest_rate = pe.Param(
-            initialize=self.inp.Interest_rate,
+        self.m.Discount_rate = pe.Param(
+            initialize=self.inp.Discount_rate,
             doc="The interest rate used for the CRF calculation",
         )
 
-        def CRF_tech_rule(m, inp):
+        def CRF_tech_rule(m, conv_tech):
             return (
-                self.m.Interest_rate
-                * (1 + self.m.Interest_rate) ** self.m.Lifetime_tech[inp]
-            ) / ((1 + self.m.Interest_rate) ** self.m.Lifetime_tech[inp] - 1)
+                self.m.Discount_rate
+                * (1 + self.m.Discount_rate) ** self.m.Lifetime_tech[conv_tech]
+            ) / ((1 + self.m.Discount_rate) ** self.m.Lifetime_tech[conv_tech] - 1)
 
         self.m.CRF_tech = pe.Param(
-            self.m.Inputs,
+            self.m.Conversion_tech,
             initialize=CRF_tech_rule,
             doc="Capital Recovery Factor (CRF) used to annualise the investment cost of generation technologies",
         )
 
-        def CRF_stor_rule(m, out):
+        def CRF_stor_rule(m, strg_tech):
             return (
-                self.m.Interest_rate
-                * (1 + self.m.Interest_rate) ** self.m.Lifetime_stor[out]
-            ) / ((1 + self.m.Interest_rate) ** self.m.Lifetime_stor[out] - 1)
+                self.m.Discount_rate
+                * (1 + self.m.Discount_rate) ** self.m.Lifetime_stor[strg_tech]
+            ) / ((1 + self.m.Discount_rate) ** self.m.Lifetime_stor[strg_tech] - 1)
 
         self.m.CRF_stor = pe.Param(
-            self.m.Outputs,
+            self.m.Storage_tech,
             initialize=CRF_stor_rule,
             doc="Capital Recovery Factor (CRF) used to annualise the investment cost of storage technologies",
         )
 
         def CRF_network_rule(m):
             return (
-                self.m.Interest_rate
-                * (1 + self.m.Interest_rate) ** self.m.Network_lifetime
-            ) / ((1 + self.m.Interest_rate) ** self.m.Network_lifetime - 1)
+                self.m.Discount_rate
+                * (1 + self.m.Discount_rate) ** self.m.Network_lifetime
+            ) / ((1 + self.m.Discount_rate) ** self.m.Network_lifetime - 1)
 
         self.m.CRF_network = pe.Param(
             initialize=CRF_network_rule,
@@ -280,9 +301,9 @@ class EnergyHub:
 
         # Environmental parameters
         # ------------------------
-        self.m.Carbon_factors = pe.Param(
-            self.m.Inputs,
-            initialize=self.inp.Carbon_factors,
+        self.m.Carbon_factors_import = pe.Param(
+            self.m.Energy_carriers_imp,
+            initialize=self.inp.Carbon_factors_import,
             doc="Energy carrier CO2 emission factors",
         )
         self.m.epsilon = pe.Param(
@@ -294,13 +315,12 @@ class EnergyHub:
         # Misc parameters
         # ---------------
         self.m.Roof_area = pe.Param(
-            self.m.Buildings,
             initialize=self.inp.Roof_area,
             doc="Available roof area for the installation of solar technologies",
         )
         self.m.P_solar = pe.Param(
-            self.m.Time,
-            self.m.Buildings,
+            self.m.Days,
+            self.m.Time_steps,
             initialize=self.inp.P_solar,
             doc="Incoming solar radiation patterns (kWh/m2) for solar technologies",
         )
@@ -311,77 +331,95 @@ class EnergyHub:
 
         # Generation technologies
         # -----------------------
-        self.m.P = pe.Var(
-            self.m.Time,
-            self.m.Inputs,
+        self.m.P_import = pe.Var(
+            self.m.Energy_carriers_imp,
+            self.m.Days,
+            self.m.Time_steps,
             within=pe.NonNegativeReals,
-            doc="The input energy stream at each generation device of the energy hub at each time step",
+            doc="Imported energy flows for the energy hub at each time step",
+        )
+        self.m.P_conv = pe.Var(
+            self.m.Conversion_tech,
+            self.m.Days,
+            self.m.Time_steps,
+            within=pe.NonNegativeReals,
+            doc="The input energy carrier stream at each energy conversion technology of the energy hub at each time step",
         )
         self.m.P_export = pe.Var(
-            self.m.Time,
-            self.m.Outputs,
+            self.m.Energy_carriers_exp,
+            self.m.Days,
+            self.m.Time_steps,
             within=pe.NonNegativeReals,
-            doc="Exported energy (in this case only electricity exports are allowed)",
+            doc="Exported energy by the energy hub at each time step",
         )
         self.m.y_on = pe.Var(
-            self.m.Dispatchable_Tech,
-            self.m.Time,
+            self.m.Conversion_tech,
+            self.m.Days,
+            self.m.Time_steps,
             within=pe.Binary,
             doc="Binary variable indicating the on (=1) or off (=0) state of a dispatchable technology",
         )
-        self.m.y = pe.Var(
-            self.m.Inputs,
+        self.m.y_conv = pe.Var(
+            self.m.Conversion_tech,
             within=pe.Binary,
-            doc="Binary variable denoting the installation (=1) of energy generation technology",
+            doc="Binary variable denoting the installation (=1) of energy conversion technology",
         )
-        self.m.Capacity = pe.Var(
-            self.m.Inputs,
+        self.m.Conv_cap = pe.Var(
+            self.m.Conversion_tech,
             within=pe.NonNegativeReals,
-            doc="Installed capacity for energy generation technology",
+            doc="Installed capacity for energy conversion technology",
         )
-        # self.m.P_export = pe.Var(((t, out) for t in self.m.Time for out in self.m.Outputs if out == 'Elec'), within = pe.NonNegativeReals,
-        #                          doc = 'Exported energy (in this case only electricity exports are allowed)')
-        # self.m.Capacity= pe.Var((out,inp) for out in self.m.Outputs for inp in self.m.Inputs if self.m.Cmatrix[out,inp] > 0, within = pe.NonNegativeReals,
-        #                         doc = 'Installed capacity for energy generation technology')
 
         # Storage technologies
         # --------------------
         self.m.Qin = pe.Var(
-            self.m.Time,
-            self.m.Outputs,
+            self.m.Storage_tech,
+            self.m.Days,
+            self.m.Time_steps,
             within=pe.NonNegativeReals,
             doc="Storage charging rate",
         )
         self.m.Qout = pe.Var(
-            self.m.Time,
-            self.m.Outputs,
+            self.m.Storage_tech,
+            self.m.Days,
+            self.m.Time_steps,
             within=pe.NonNegativeReals,
             doc="Storage discharging rate",
         )
-        self.m.E = pe.Var(
-            self.m.Time,
-            self.m.Outputs,
-            within=pe.NonNegativeReals,
-            doc="Storage state of charge",
-        )
+        if self.temp_res != 3:
+            self.m.SoC = pe.Var(
+                self.m.Storage_tech,
+                self.m.Days,
+                self.m.Time_steps,
+                within=pe.NonNegativeReals,
+                doc="Storage state of charge",
+            )
+        else:
+            self.m.SoC = pe.Var(
+                self.m.Storage_tech,
+                self.m.Calendar_days,
+                self.m.Time_steps,
+                within=pe.NonNegativeReals,
+                doc="Storage state of charge",
+            )
         self.m.y_stor = pe.Var(
-            self.m.Outputs,
+            self.m.Storage_tech,
             within=pe.Binary,
             doc="Binary variable denoting the installation (=1) of energy storage technology",
         )
         self.m.Storage_cap = pe.Var(
-            self.m.Outputs,
+            self.m.Storage_tech,
             within=pe.NonNegativeReals,
             doc="Installed capacity for energy storage technology",
         )
 
         # Objective function components
         # -----------------------------
-        self.m.Operating_cost = pe.Var(
+        self.m.Import_cost = pe.Var(
             within=pe.NonNegativeReals,
             doc="The operating cost for the consumption of energy carriers",
         )
-        self.m.Income_via_exports = pe.Var(
+        self.m.Export_profit = pe.Var(
             within=pe.NonNegativeReals, doc="Total income due to exported electricity"
         )
         self.m.Investment_cost = pe.Var(
@@ -402,86 +440,81 @@ class EnergyHub:
 
         # Energy demand balances
         # ----------------------
-        def Load_balance_rule(m, t, out):
-            return (
-                sum(m.P[t, inp] * m.Cmatrix[out, inp] for inp in m.Inputs)
-                + m.Qout[t, out]
-                - m.Qin[t, out]
-                == m.Loads[t, out] / m.Network_efficiency[out] + m.P_export[t, out]
+        def Load_balance_rule(m, ec, d, t):
+            return (m.P_import[ec, d, t] if ec in m.Energy_carriers_imp else 0) + sum(
+                m.P_conv[conv_tech, d, t] * m.Conv_factor[conv_tech, ec]
+                for conv_tech in m.Conversion_tech
+            ) + sum(
+                m.Storage_tech_coupling[strg_tech, ec]
+                * (m.Qout[strg_tech, d, t] - m.Qin[strg_tech, d, t])
+                for strg_tech in m.Storage_tech
+            ) == (
+                m.Demands[ec, d, t] if ec in m.Energy_carriers_dem else 0
+            ) / (
+                m.Network_efficiency[ec] if ec in m.Energy_carriers_dem else 1
+            ) + (
+                m.P_export[ec, d, t] if ec in m.Energy_carriers_exp else 0
             )
 
         self.m.Load_balance = pe.Constraint(
-            self.m.Time, self.m.Outputs, rule=Load_balance_rule
-        )
-
-        def No_heat_export_rule(m, t, out):
-            return m.P_export[t, out] == 0
-
-        self.m.No_heat_export = pe.Constraint(
-            ((t, out) for t in self.m.Time for out in self.m.Outputs if out == "Heat"),
-            rule=No_heat_export_rule,
-            doc="No heat exports allowed",
+            self.m.Energy_carriers,
+            self.m.Days,
+            self.m.Time_steps,
+            rule=Load_balance_rule,
+            doc="Energy balance for the energy hub including conversion, storage, losses, exchange and export flows",
         )
 
         # Generation constraints
         # ----------------------
-        def Capacity_constraint_rule(m, t, disp, out):
-            return m.P[t, disp] * m.Cmatrix[out, disp] <= m.Capacity[disp]
+        def Capacity_constraint_rule(m, disp, ec, d, t):
+            if m.Conv_factor[disp, ec] > 0:
+                return (
+                    m.P_conv[disp, d, t] * m.Conv_factor[disp, ec] <= m.Conv_cap[disp]
+                )
+            else:
+                return pe.Constraint.Skip
 
         self.m.Capacity_constraint = pe.Constraint(
-            self.m.Time,
-            self.m.Dispatchable_Tech,
-            self.m.Outputs,
+            self.m.Dispatchable_tech,
+            self.m.Energy_carriers,
+            self.m.Days,
+            self.m.Time_steps,
             rule=Capacity_constraint_rule,
             doc="Constraint preventing capacity violation for the generation technologies of the energy hub",
         )
 
-        def Solar_pv_input_rule(m, t, sol_pv, bldg):
-            return m.P[t, sol_pv] == m.P_solar[t, bldg] * m.Capacity[sol_pv]
+        def Solar_input_rule(m, sol, d, t):
+            return m.P_conv[sol, d, t] == m.P_solar[d, t] * m.Conv_cap[sol]
 
-        self.m.Solar_pv_input = pe.Constraint(
-            (
-                (t, sol_pv, bldg)
-                for t in self.m.Time
-                for i, sol_pv in enumerate(self.m.Solar_pv_inputs)
-                for k, bldg in enumerate(self.m.Buildings)
-                if i == k
-            ),
-            rule=Solar_pv_input_rule,
+        self.m.Solar_input = pe.Constraint(
+            self.m.Solar_tech,
+            self.m.Days,
+            self.m.Time_steps,
+            rule=Solar_input_rule,
             doc="Constraint connecting the solar radiation per m2 with the area of solar PV technologies",
         )
 
-        def Solar_th_input_rule(m, t, sol_th, bldg):
-            return m.P[t, sol_th] == m.P_solar[t, bldg] * m.Capacity[sol_th]
-
-        self.m.Solar_th_input = pe.Constraint(
-            (
-                (t, sol_th, bldg)
-                for t in self.m.Time
-                for i, sol_th in enumerate(self.m.Solar_th_inputs)
-                for k, bldg in enumerate(self.m.Buildings)
-                if i == k
-            ),
-            rule=Solar_th_input_rule,
-            doc="Constraint connecting the solar radiation per m2 with the area of solar thermal technologies",
-        )
-
-        def Minimum_part_load_constr_rule1(m, t, disp, out):
-            return m.P[t, disp] * m.Cmatrix[out, disp] <= m.BigM * m.y_on[disp, t]
-
-        def Minimum_part_load_constr_rule2(m, t, disp, out):
+        def Minimum_part_load_constr_rule1(m, disp, ec, d, t):
             return (
-                m.P[t, disp] * m.Cmatrix[out, disp] + m.BigM * (1 - m.y_on[disp, t])
-                >= m.Minimum_part_load[disp] * m.Capacity[disp]
+                m.P_conv[disp, d, t] * m.Conv_factor[disp, ec]
+                <= m.BigM * m.y_on[disp, d, t]
+            )
+
+        def Minimum_part_load_constr_rule2(m, disp, ec, d, t):
+            return (
+                m.P_conv[disp, d, t] * m.Conv_factor[disp, ec]
+                + m.BigM * (1 - m.y_on[disp, d, t])
+                >= m.Minimum_part_load[disp] * m.Conv_cap[disp]
             )
 
         self.m.Mininum_part_rule_constr1 = pe.Constraint(
             (
-                (t, disp, out)
-                for t in self.m.Time
-                for disp in self.m.Dispatchable_Tech
-                for out in self.m.Outputs
-                if self.m.Cmatrix[out, disp] > 0
+                (disp, ec, d, t)
+                for disp in self.m.Dispatchable_tech
+                for ec in self.m.Energy_carriers
+                for d in self.m.Days
+                for t in self.m.Time_steps
+                if self.m.Conv_factor[disp, ec] > 0
             ),
             rule=Minimum_part_load_constr_rule1,
             doc="Constraint enforcing a minimum load during the operation of a dispatchable energy technology",
@@ -489,153 +522,217 @@ class EnergyHub:
 
         self.m.Mininum_part_rule_constr2 = pe.Constraint(
             (
-                (t, disp, out)
-                for t in self.m.Time
-                for disp in self.m.Dispatchable_Tech
-                for out in self.m.Outputs
-                if self.m.Cmatrix[out, disp] > 0
+                (disp, ec, d, t)
+                for disp in self.m.Dispatchable_tech
+                for ec in self.m.Energy_carriers
+                for d in self.m.Days
+                for t in self.m.Time_steps
+                if self.m.Conv_factor[disp, ec] > 0
             ),
             rule=Minimum_part_load_constr_rule2,
             doc="Constraint enforcing a minimum load during the operation of a dispatchable energy technology",
         )
 
-        def Fixed_cost_constr_rule(m, inp):
-            return m.Capacity[inp] <= m.BigM * m.y[inp]
+        def Fixed_cost_constr_rule(m, conv_tech):
+            return m.Conv_cap[conv_tech] <= m.BigM * m.y_conv[conv_tech]
 
         self.m.Fixed_cost_constr = pe.Constraint(
-            self.m.Inputs,
+            self.m.Conversion_tech,
             rule=Fixed_cost_constr_rule,
             doc="Constraint for the formulation of the fixed cost in the objective function",
         )
 
-        def Roof_area_non_violation_rule(m, sol_pv, sol_st, bldg):
-            return m.Capacity[sol_pv] + m.Capacity[sol_st] <= m.Roof_area[bldg]
+        def Roof_area_non_violation_rule(m):
+            return sum(m.Conv_cap[sol] for sol in m.Solar_tech) <= m.Roof_area
 
         self.m.Roof_area_non_violation = pe.Constraint(
-            (
-                (pv, st, bldg)
-                for i, pv in enumerate(self.m.Solar_pv_inputs)
-                for j, st in enumerate(self.m.Solar_th_inputs)
-                for k, bldg in enumerate(self.m.Buildings)
-                if i == j == k
-            ),
             rule=Roof_area_non_violation_rule,
             doc="Non violation of the maximum roof area for solar installations",
         )
 
         # Storage constraints
         # -------------------
+        def Storage_balance_rule(m, strg_tech, d, t):
+            if self.temp_res == 1:
+                if t != 1:
+                    return (
+                        m.SoC[strg_tech, d, t]
+                        == (1 - m.Storage_standing_losses[strg_tech])
+                        * m.SoC[strg_tech, d, t - 1]
+                        + m.Storage_charging_eff[strg_tech] * m.Qin[strg_tech, d, t]
+                        - (1 / m.Storage_discharging_eff[strg_tech])
+                        * m.Qout[strg_tech, d, t]
+                    )
+                else:
+                    return (
+                        m.SoC[strg_tech, d, t]
+                        == (1 - m.Storage_standing_losses[strg_tech])
+                        * m.SoC[strg_tech, d, t + 23]
+                        + m.Storage_charging_eff[strg_tech] * m.Qin[strg_tech, d, t]
+                        - (1 / m.Storage_discharging_eff[strg_tech])
+                        * m.Qout[strg_tech, d, t]
+                    )
+            elif self.temp_res == 2:
+                if t != 1:
+                    return (
+                        m.SoC[strg_tech, d, t]
+                        == (1 - m.Storage_standing_losses[strg_tech])
+                        * m.SoC[strg_tech, d, t - 1]
+                        + m.Storage_charging_eff[strg_tech] * m.Qin[strg_tech, d, t]
+                        - (1 / m.Storage_discharging_eff[strg_tech])
+                        * m.Qout[strg_tech, d, t]
+                    )
+                else:
+                    if d != 1:
+                        return (
+                            m.SoC[strg_tech, d, t]
+                            == (1 - m.Storage_standing_losses[strg_tech])
+                            * m.SoC[strg_tech, d - 1, t + 23]
+                            + m.Storage_charging_eff[strg_tech] * m.Qin[strg_tech, d, t]
+                            - (1 / m.Storage_discharging_eff[strg_tech])
+                            * m.Qout[strg_tech, d, t]
+                        )
+                    else:
+                        return (
+                            m.SoC[strg_tech, d, t]
+                            == (1 - m.Storage_standing_losses[strg_tech])
+                            * m.SoC[strg_tech, d + 364, t + 23]
+                            + m.Storage_charging_eff[strg_tech] * m.Qin[strg_tech, d, t]
+                            - (1 / m.Storage_discharging_eff[strg_tech])
+                            * m.Qout[strg_tech, d, t]
+                        )
+            elif self.temp_res == 3:
+                if t != 1:
+                    return (
+                        m.SoC[strg_tech, d, t]
+                        == (1 - m.Storage_standing_losses[strg_tech])
+                        * m.SoC[strg_tech, d, t - 1]
+                        + m.Storage_charging_eff[strg_tech]
+                        * m.Qin[strg_tech, m.C_to_T[d], t]
+                        - (1 / m.Storage_discharging_eff[strg_tech])
+                        * m.Qout[strg_tech, m.C_to_T[d], t]
+                    )
+                else:
+                    if d != 1:
+                        return (
+                            m.SoC[strg_tech, d, t]
+                            == (1 - m.Storage_standing_losses[strg_tech])
+                            * m.SoC[strg_tech, d - 1, t + 23]
+                            + m.Storage_charging_eff[strg_tech]
+                            * m.Qin[strg_tech, m.C_to_T[d], t]
+                            - (1 / m.Storage_discharging_eff[strg_tech])
+                            * m.Qout[strg_tech, m.C_to_T[d], t]
+                        )
+                    else:
+                        return (
+                            m.SoC[strg_tech, d, t]
+                            == (1 - m.Storage_standing_losses[strg_tech])
+                            * m.SoC[strg_tech, d + 364, t + 23]
+                            + m.Storage_charging_eff[strg_tech]
+                            * m.Qin[strg_tech, m.C_to_T[d], t]
+                            - (1 / m.Storage_discharging_eff[strg_tech])
+                            * m.Qout[strg_tech, m.C_to_T[d], t]
+                        )
 
-        def Storage_balance_rule(m, t, out):
-            return (
-                m.E[t, out]
-                == (1 - m.Storage_standing_losses[out]) * m.E[t - 1, out]
-                + m.Storage_charging_eff[out] * m.Qin[t, out]
-                - (1 / m.Storage_discharging_eff[out]) * m.Qout[t, out]
+        if self.temp_res == 1 or self.temp_res == 2:
+            self.m.Storage_balance = pe.Constraint(
+                self.m.Storage_tech,
+                self.m.Days,
+                self.m.Time_steps,
+                rule=Storage_balance_rule,
+                doc="Energy balance for the storage modules considering incoming and outgoing energy flows",
+            )
+        elif self.temp_res == 3:
+            self.m.Storage_balance = pe.Constraint(
+                self.m.Storage_tech,
+                self.m.Calendar_days,
+                self.m.Time_steps,
+                rule=Storage_balance_rule,
+                doc="Energy balance for the storage modules considering incoming and outgoing energy flows",
             )
 
-        self.m.Storage_balance = pe.Constraint(
-            self.m.Time - self.m.First_hour,
-            self.m.Outputs,
-            rule=Storage_balance_rule,
-            doc="Energy balance for the storage modules considering incoming and outgoing energy flows",
-        )
-
-        def Storage_balance_cycling_rule(m, t, out):
-            if self.temp_res == 1:
-                return (
-                    m.E[t, out]
-                    == (1 - m.Storage_standing_losses[out]) * m.E[t + 23, out]
-                    + m.Storage_charging_eff[out] * m.Qin[t, out]
-                    - (1 / m.Storage_discharging_eff[out]) * m.Qout[t, out]
-                )
-            else:
-                return (
-                    m.E[t, out]
-                    == (1 - m.Storage_standing_losses[out]) * m.E[t + 8759, out]
-                    + m.Storage_charging_eff[out] * m.Qin[t, out]
-                    - (1 / m.Storage_discharging_eff[out]) * m.Qout[t, out]
-                )
-
-        self.m.Storage_balance_cycling = pe.Constraint(
-            self.m.First_hour,
-            self.m.Outputs,
-            rule=Storage_balance_cycling_rule,
-            doc="Energy balance for the storage modules considering incoming and outgoing energy flows",
-        )
-
-        def Storage_charg_rate_constr_rule(m, t, out):
-            return m.Qin[t, out] <= m.Storage_max_charge[out] * m.Storage_cap[out]
+        def Storage_charg_rate_constr_rule(m, strg_tech, d, t):
+            return (
+                m.Qin[strg_tech, d, t]
+                <= m.Storage_max_charge[strg_tech] * m.Storage_cap[strg_tech]
+            )
 
         self.m.Storage_charg_rate_constr = pe.Constraint(
-            self.m.Time,
-            self.m.Outputs,
+            self.m.Storage_tech,
+            self.m.Days,
+            self.m.Time_steps,
             rule=Storage_charg_rate_constr_rule,
             doc="Constraint for the maximum allowable charging rate of the storage technologies",
         )
 
-        def Storage_discharg_rate_constr_rule(m, t, out):
-            return m.Qout[t, out] <= m.Storage_max_discharge[out] * m.Storage_cap[out]
+        def Storage_discharg_rate_constr_rule(m, strg_tech, d, t):
+            return (
+                m.Qout[strg_tech, d, t]
+                <= m.Storage_max_charge[strg_tech] * m.Storage_cap[strg_tech]
+            )
 
         self.m.Storage_discharg_rate_constr = pe.Constraint(
-            self.m.Time,
-            self.m.Outputs,
+            self.m.Storage_tech,
+            self.m.Days,
+            self.m.Time_steps,
             rule=Storage_discharg_rate_constr_rule,
             doc="Constraint for the maximum allowable discharging rate of the storage technologies",
         )
 
-        def Storage_cap_constr_rule(m, t, out):
-            return m.E[t, out] <= m.Storage_cap[out]
+        def Storage_cap_constr_rule(m, strg_tech, d, t):
+            return m.SoC[strg_tech, d, t] <= m.Storage_cap[strg_tech]
 
         self.m.Storage_cap_constr = pe.Constraint(
-            self.m.Time,
-            self.m.Outputs,
+            self.m.Storage_tech,
+            self.m.Days,
+            self.m.Time_steps,
             rule=Storage_cap_constr_rule,
             doc="Constraint for non-violation of the capacity of the storage",
         )
 
-        def Max_allowable_storage_cap_rule(m, out):
-            return m.Storage_cap[out] <= m.Storage_max_cap[out]
+        def Max_allowable_storage_cap_rule(m, strg_tech):
+            return m.Storage_cap[strg_tech] <= m.Storage_max_cap[strg_tech]
 
         self.m.Max_allowable_storage_cap = pe.Constraint(
-            self.m.Outputs,
+            self.m.Storage_tech,
             rule=Max_allowable_storage_cap_rule,
             doc="Constraint enforcing the maximum allowable storage capacity per type of storage technology",
         )
 
-        def Fixed_cost_storage_rule(m, out):
-            return m.Storage_cap[out] <= m.BigM * m.y_stor[out]
+        def Fixed_cost_storage_rule(m, strg_tech):
+            return m.Storage_cap[strg_tech] <= m.BigM * m.y_stor[strg_tech]
 
         self.m.Fixed_cost_storage = pe.Constraint(
-            self.m.Outputs,
+            self.m.Storage_tech,
             rule=Fixed_cost_storage_rule,
             doc="Constraint for the formulation of the fixed cost in the objective function",
         )
 
         # Objective function definitions
         # ------------------------------
-
-        def Operating_cost_rule(m):
-            return m.Operating_cost == sum(
-                m.Operating_costs[inp] * m.P[t, inp] * m.Number_of_days[t]
-                for t in m.Time
-                for inp in m.Inputs
+        def Import_cost_rule(m):
+            return m.Import_cost == sum(
+                m.Import_prices[ec_imp] * m.P_import[ec_imp, d, t] * m.Number_of_days[d]
+                for ec_imp in m.Energy_carriers_imp
+                for d in m.Days
+                for t in m.Time_steps
             )
 
-        self.m.Operating_cost_def = pe.Constraint(
-            rule=Operating_cost_rule,
+        self.m.Import_cost_def = pe.Constraint(
+            rule=Import_cost_rule,
             doc="Definition of the operating cost component of the total energy system cost",
         )
 
-        def Income_via_exports_rule(m):
-            return m.Income_via_exports == sum(
-                m.FiT[out] * m.P_export[t, out] * m.Number_of_days[t]
-                for t in m.Time
-                for out in m.Outputs
+        def Export_profit_rule(m):
+            return m.Export_profit == sum(
+                m.Export_prices[ec_exp] * m.P_export[ec_exp, d, t] * m.Number_of_days[d]
+                for ec_exp in m.Energy_carriers_exp
+                for d in m.Days
+                for t in m.Time_steps
             )
 
-        self.m.Income_via_exports_def = pe.Constraint(
-            rule=Income_via_exports_rule,
+        self.m.Export_profit_def = pe.Constraint(
+            rule=Export_profit_rule,
             doc="Definition of the income due to electricity exports component of the total energy system cost",
         )
 
@@ -644,19 +741,19 @@ class EnergyHub:
                 m.Investment_cost
                 == sum(
                     (
-                        m.Fixed_inv_costs[inp] * m.y[inp]
-                        + m.Linear_inv_costs[inp] * m.Capacity[inp]
+                        m.Fixed_conv_costs[conv_tech] * m.y_conv[conv_tech]
+                        + m.Linear_conv_costs[conv_tech] * m.Conv_cap[conv_tech]
                     )
-                    * m.CRF_tech[inp]
-                    for inp in m.Inputs
+                    * m.CRF_tech[conv_tech]
+                    for conv_tech in m.Conversion_tech
                 )
                 + sum(
                     (
-                        m.Fixed_stor_costs[out] * m.y_stor[out]
-                        + m.Linear_stor_costs[out] * m.Storage_cap[out]
+                        m.Fixed_stor_costs[strg_tech] * m.y_stor[strg_tech]
+                        + m.Linear_stor_costs[strg_tech] * m.Storage_cap[strg_tech]
                     )
-                    * m.CRF_stor[out]
-                    for out in m.Outputs
+                    * m.CRF_stor[strg_tech]
+                    for strg_tech in m.Storage_tech
                 )
                 + m.Network_inv_cost_per_m * m.Network_length * m.CRF_network
             )
@@ -667,10 +764,7 @@ class EnergyHub:
         )
 
         def Total_cost_rule(m):
-            return (
-                m.Total_cost
-                == m.Investment_cost + m.Operating_cost - m.Income_via_exports
-            )
+            return m.Total_cost == m.Investment_cost + m.Import_cost - m.Export_profit
 
         self.m.Total_cost_def = pe.Constraint(
             rule=Total_cost_rule,
@@ -679,9 +773,12 @@ class EnergyHub:
 
         def Total_carbon_rule(m):
             return m.Total_carbon == sum(
-                m.Carbon_factors[inp] * m.P[t, inp] * m.Number_of_days[t]
-                for t in m.Time
-                for inp in m.Inputs
+                m.Carbon_factors_import[ec_imp]
+                * m.P_import[ec_imp, d, t]
+                * m.Number_of_days[d]
+                for ec_imp in m.Energy_carriers_imp
+                for d in m.Days
+                for t in m.Time_steps
             )
 
         self.m.Total_carbon_def = pe.Constraint(
@@ -733,101 +830,128 @@ class EnergyHub:
                 * dsgn: Contains the generation and storage capacities of all candidate technologies. It is a data frame for all optim_mode settings.
                 * oper: Contains the generation, export and storage energy flows for all time steps considered. It is a single dataframe when optim_mode is 1 or 2 (single-objective) and a list of dataframes for each Pareto point when optim_mode is set to 3 (multi-objective).
         """
-        solver = pyomo.opt.SolverFactory("gurobi")
-        solver.options["MIPGap"] = 0.05
-        solver.options["TimeLimit"] = 3600*96-300
 
-        def get_design_results(model_instance):
-            dsgn1 = pyio.get_entity(model_instance, "Capacity")
-            dsgn2 = pyio.get_entity(model_instance, "Storage_cap")
-            dsgn = pd.concat([dsgn1, dsgn2])
-            dsgn = pd.DataFrame(dsgn)
-            dsgn = dsgn.T
-            return dsgn
+        import Output_functions as of
+        import pickle as pkl
 
-        def get_oper_results(model_instance):
-            oper1 = pyio.get_entities(model_instance, "P").unstack()
-            oper2 = pyio.get_entities(
-                model_instance, ["P_export", "Qin", "Qout", "E"]
-            ).unstack()
-            oper = pd.merge(oper1, oper2, left_index=True, right_index=True)
-            return oper
+        # ====================================|
+        # Main optimization solving procedure |
+        # ====================================|
 
-        def get_obj_results(model_instance):
-            obj = pyio.get_entities(
-                model_instance,
-                [
-                    "Total_cost",
-                    "Investment_cost",
-                    "Operating_cost",
-                    "Income_via_exports",
-                    "Total_carbon",
-                ],
-            )
-            return obj
+        # Solver definition
+        # -----------------
+        optimizer = pyomo.opt.SolverFactory("gurobi")
+        # optimizer.options["MIPGap"] = 0.05
+        # optimizer.options["TimeLimit"] = 3600*96-300
 
         if self.optim_mode == 1:
 
             # Cost minimization
-            # -----------------
-            self.results = [None]
+            # =================
+            obj = [None]
+            dsgn = [None]
+            oper = [None]
+            all_vars = [None]
 
             self.m.Carbon_obj.deactivate()
-            results = solver.solve(self.m, tee=True, keepfiles=True, logfile="gur.log")
-            # results.write()
-            # print(results)
-            self.m.solutions.store_to(results)            
-            results.write(filename='results.json', format='json')            
-            
+            results = optimizer.solve(
+                self.m, tee=True, keepfiles=True, logfile="gur.log"
+            )
+
             # Save results
-            self.results[0] = self.m.clone()
-            obj = get_obj_results(self.m)
-            dsgn = get_design_results(self.m)
-            oper = get_oper_results(self.m)
+            # ------------
+            self.m.solutions.store_to(results)
+            results.write(
+                filename="cost_min_solver_results.json", format="json"
+            )  # JSON file with results
+            of.pickle_solver_results(
+                self.m, "cost_min_solver_results.p"
+            )  # Write a pickle file with the SolverResults object
+
+            obj[0] = of.get_obj_results(self.m)
+            dsgn[0] = of.get_design_results(self.m)
+            oper[0] = of.get_oper_results(self.m)
+
+            all_vars[0] = of.get_all_vars(self.m)
+            file = open("cost_min.p", "wb")
+            pkl.dump(all_vars, file)
+            file.close()
+
         elif self.optim_mode == 2:
 
             # Carbon minimization
-            # -------------------
-            self.results = [None]
+            # ===================
+            obj = [None]
+            dsgn = [None]
+            oper = [None]
+            all_vars = [None]
 
             self.m.Carbon_obj.activate()
             self.m.Cost_obj.deactivate()
-            solver.solve(self.m, tee=False, keepfiles=False)
+            optimizer.solve(self.m, tee=True, keepfiles=True, logfile="gur.log")
             carb_min = pe.value(self.m.Total_carbon)
 
             self.m.epsilon = carb_min
             self.m.Carbon_obj.deactivate()
             self.m.Cost_obj.activate()
-            solver.solve(self.m, tee=False, keepfiles=False)
+            results = optimizer.solve(
+                self.m, tee=True, keepfiles=True, logfile="gur.log"
+            )
 
             # Save results
-            self.results[0] = self.m.clone()
-            obj = get_obj_results(self.m)
-            dsgn = get_design_results(self.m)
-            oper = get_oper_results(self.m)
+            # ------------
+            self.m.solutions.store_to(results)
+            results.write(
+                filename="carb_min_solver_results.json", format="json"
+            )  # JSON file with results
+            of.pickle_solver_results(
+                self.m, "carb_min_solver_results.p"
+            )  # Write a pickle file with the SolverResults object
+
+            obj[0] = of.get_obj_results(self.m)
+            dsgn[0] = of.get_design_results(self.m)
+            oper[0] = of.get_oper_results(self.m)
+
+            all_vars[0] = of.get_all_vars(self.m)
+            file = open("carb_min.p", "wb")
+            pkl.dump(all_vars, file)
+            file.close()
+
         else:
 
-            self.results = [None] * (self.num_of_pfp + 2)
+            obj = [None] * (self.num_of_pfp + 2)
+            dsgn = [None] * (self.num_of_pfp + 2)
             oper = [None] * (self.num_of_pfp + 2)
+            all_vars = [None] * (self.num_of_pfp + 2)
 
             # Cost minimization
             # -----------------
             self.m.Carbon_obj.deactivate()
-            solver.solve(self.m, tee=False, keepfiles=False)
+            results = optimizer.solve(
+                self.m, tee=True, keepfiles=True, logfile="gur.log"
+            )
             carb_max = pe.value(self.m.Total_carbon)
 
             # Save results
-            self.results[0] = self.m.clone()
-            obj = get_obj_results(self.m)
-            dsgn = get_design_results(self.m)
-            oper[0] = get_oper_results(self.m)
-            oper[0].index.name = "Time"
+            # ------------
+            self.m.solutions.store_to(results)
+            results.write(
+                filename="MO_solver_results_1.json", format="json"
+            )  # JSON file with results
+            of.pickle_solver_results(
+                self.m, "MO_solver_results_1.p"
+            )  # Write a pickle file with the SolverResults object
+
+            obj[0] = of.get_obj_results(self.m)
+            dsgn[0] = of.get_design_results(self.m)
+            oper[0] = of.get_oper_results(self.m)
+            all_vars[0] = of.get_all_vars(self.m)
 
             # Carbon minimization
             # -------------------
             self.m.Carbon_obj.activate()
             self.m.Cost_obj.deactivate()
-            solver.solve(self.m, tee=False, keepfiles=False)
+            optimizer.solve(self.m, tee=True, keepfiles=True, logfile="gur.log")
             carb_min = pe.value(self.m.Total_carbon)
 
             # Pareto points
@@ -836,14 +960,24 @@ class EnergyHub:
                 self.m.epsilon = carb_min
                 self.m.Carbon_obj.deactivate()
                 self.m.Cost_obj.activate()
-                solver.solve(self.m, tee=False, keepfiles=False)
+                results = optimizer.solve(
+                    self.m, tee=True, keepfiles=True, logfile="gur.log"
+                )
 
                 # Save results
-                self.results[1] = self.m.clone()
-                obj = pd.concat([obj, get_obj_results(self.m)])
-                dsgn = pd.concat([dsgn, get_design_results(self.m)])
-                oper[1] = get_oper_results(self.m)
-                oper[1].index.name = "Time"
+                # ------------
+                self.m.solutions.store_to(results)
+                results.write(
+                    filename="MO_solver_results_2.json", format="json"
+                )  # JSON file with results
+                of.pickle_solver_results(
+                    sp.m, "MO_solver_results_2.p"
+                )  # Write a pickle file with the SolverResults object
+
+                obj[1] = of.get_obj_results(self.m)
+                dsgn[1] = of.get_design_results(self.m)
+                oper[1] = of.get_oper_results(self.m)
+                all_vars[1] = of.get_all_vars(self.m)
 
             else:
                 self.m.Carbon_obj.deactivate()
@@ -856,47 +990,34 @@ class EnergyHub:
 
                 for i in range(1, self.num_of_pfp + 1 + 1):
                     self.m.epsilon = steps[i - 1]
-                    solver.solve(self.m, tee=False, keepfiles=False)
+                    results = optimizer.solve(
+                        self.m, tee=True, keepfiles=True, logfile="gur.log"
+                    )
 
                     # Save results
-                    self.results[i] = self.m.clone()
-                    obj = pd.concat([obj, get_obj_results(self.m)])
-                    dsgn = pd.concat([dsgn, get_design_results(self.m)])
-                    oper[i] = get_oper_results(self.m)
-                    oper[i].index.name = "Time"
+                    # ------------
+                    self.m.solutions.store_to(results)
+                    results.write(
+                        filename="MO_solver_results_" + str(i + 1) + ".json",
+                        format="json",
+                    )  # JSON file with results
+                    of.pickle_solver_results(
+                        sp.m, "MO_solver_results_" + str(i + 1) + ".p"
+                    )  # Write a pickle file with the SolverResults object
 
-        # Beautification
-        # --------------
-        obj.index.name = "Pareto front points"
-        dsgn.rename(columns={"Heat": "Heat stor", "Elec": "Elec stor"}, inplace=True)
-        dsgn.index.name = "Pareto front points"
+                    obj[i] = of.get_obj_results(self.m)
+                    dsgn[i] = of.get_design_results(self.m)
+                    oper[i] = of.get_oper_results(self.m)
+                    all_vars[i] = of.get_all_vars(self.m)
 
-        if self.optim_mode == 1:
-            obj.index = ["Min_cost"]
-            dsgn.index = ["Min_cost"]
-            oper.index.name = "Time"
-        elif self.optim_mode == 2:
-            obj.index = ["Min_carb"]
-            dsgn.index = ["Min_carb"]
-            oper.index.name = "Time"
-        else:
-            obj.index = (
-                ["Min_cost"]
-                + ["PFP" + str(i) for i in range(2, self.num_of_pfp + 1 + 1)]
-                + ["Min_carb"]
-            )
-            dsgn.index = (
-                ["Min_cost"]
-                + ["PFP" + str(i) for i in range(2, self.num_of_pfp + 1 + 1)]
-                + ["Min_carb"]
-            )
+            file = open("multi_obj.p", "wb")
+            pkl.dump(all_vars, file)
+            file.close()
+
         return obj, dsgn, oper
 
 
 if __name__ == "__main__":
     sp = EnergyHub("Input_data", 1, 1, 1)
+    sp.create_model()  # Create model
     (obj, dsgn, oper) = sp.solve()
-    myResultsFromStep1 = SolverResults()
-    sp.m.solutions.store_to(myResultsFromStep1)    
-    with open('test3.pkl', mode='wb') as file:
-        pickle.dump(myResultsFromStep1, file)
