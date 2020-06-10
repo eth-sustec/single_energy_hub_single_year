@@ -682,14 +682,23 @@ class EnergyHub:
         def Storage_cap_constr_rule(m, strg_tech, d, t):
             return m.SoC[strg_tech, d, t] <= m.Storage_cap[strg_tech]
 
-        self.m.Storage_cap_constr = pe.Constraint(
-            self.m.Storage_tech,
-            self.m.Days,
-            self.m.Time_steps,
-            rule=Storage_cap_constr_rule,
-            doc="Constraint for non-violation of the capacity of the storage",
-        )
-
+        if self.temp_res == 1 or self.temp_res == 2 :
+            self.m.Storage_cap_constr = pe.Constraint(
+                self.m.Storage_tech,
+                self.m.Days,
+                self.m.Time_steps,
+                rule=Storage_cap_constr_rule,
+                doc="Constraint for non-violation of the capacity of the storage",
+            )
+        elif self.temp_res == 3:
+            self.m.Storage_cap_constr = pe.Constraint(
+                self.m.Storage_tech,
+                self.m.Calendar_days,
+                self.m.Time_steps,
+                rule=Storage_cap_constr_rule,
+                doc="Constraint for non-violation of the capacity of the storage",
+            )
+            
         def Max_allowable_storage_cap_rule(m, strg_tech):
             return m.Storage_cap[strg_tech] <= m.Storage_max_cap[strg_tech]
 
