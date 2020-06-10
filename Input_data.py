@@ -132,8 +132,8 @@ Minimum_part_load = {
 # Linear_stor_costs, Fixed_stor_costs, Storage_max_charge, Storage_max_discharge, Storage_standing_losses, Storage_charging_eff,
 # Storage_discharging_eff, Storage_max_cap, Lifetime_stor
 stor_tech = {
-    "Thermal_storage_tank": [12.5, 1685, 0.25, 0.25, 0.01, 0.90, 0.90, 600, 20],
-    "Battery": [2000, 0, 0.25, 0.25, 0.001, 0.90, 0.90, 600, 20],
+    "Thermal_storage_tank": [12.5, 1685, 0.25, 0.25, 0.01, 0.90, 0.90, 10**8, 20],
+    "Battery": [2000, 0, 0.25, 0.25, 0.001, 0.90, 0.90, 10**8, 20],
 }
 
 Linear_stor_costs = {key: stor_tech[key][0] for key in stor_tech.keys()}
