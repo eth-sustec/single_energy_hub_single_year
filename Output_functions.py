@@ -29,12 +29,19 @@ def get_oper_results(model_instance):
             .add_prefix(var + "[")
             .add_suffix("]")
         )
-
-    oper = dummy[0]
-    for v in range(1, len(oper_vars)):
-        oper = pd.merge(oper, dummy[v], left_index=True, right_index=True)
-
-    return oper
+        
+    # Check if all elements have the same size
+    test = [len(x.index) for x in dummy] # Get the number of rows
+    test = all(x == test[0] for x in test) # Check if they're all the same
+    
+    if test == True:
+        oper = dummy[0]
+        for v in range(1, len(oper_vars)):
+            oper = pd.merge(oper, dummy[v], left_index=True, right_index=True)
+        return oper
+    else:
+        return None
+        # Here new code is needed to return both the variables that are for each typical day and the SoC that is for each calendar day
 
 
 def get_obj_results(model_instance):

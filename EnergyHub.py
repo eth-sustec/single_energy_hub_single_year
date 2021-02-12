@@ -353,7 +353,7 @@ class EnergyHub:
             doc="Exported energy by the energy hub at each time step",
         )
         self.m.y_on = pe.Var(
-            self.m.Conversion_tech,
+            self.m.Dispatchable_tech,
             self.m.Days,
             self.m.Time_steps,
             within=pe.Binary,
@@ -842,6 +842,7 @@ class EnergyHub:
 
         import Output_functions as of
         import pickle as pkl
+        import cloudpickle
 
         # ====================================|
         # Main optimization solving procedure |
@@ -884,6 +885,10 @@ class EnergyHub:
             all_vars[0] = of.get_all_vars(self.m)
             file = open("cost_min.p", "wb")
             pkl.dump(all_vars, file)
+            file.close()
+            
+            file = open("cost_min_model.p", "wb")
+            cloudpickle.dump(self.m, file)
             file.close()
 
         elif self.optim_mode == 2:
@@ -949,7 +954,7 @@ class EnergyHub:
             )  # JSON file with results
             of.pickle_solver_results(
                 self.m, "MO_solver_results_1.p"
-            )  # Write a pickle file with the SolverResults object
+            )  # Write a pickle file with the SolverResults object            
 
             obj[0] = of.get_obj_results(self.m)
             dsgn[0] = of.get_design_results(self.m)
@@ -1027,6 +1032,6 @@ class EnergyHub:
 
 
 if __name__ == "__main__":
-    sp = EnergyHub("Input_data", 1, 1, 1)
+    sp = EnergyHub("Input_data", 3, 1, 1)
     sp.create_model()  # Create model
     (obj, dsgn, oper) = sp.solve()

@@ -382,7 +382,7 @@ class EnergyHubRetrofit:
             doc="Exported energy by the energy hub at each time step",
         )
         self.m.y_on = pe.Var(
-            self.m.Conversion_tech,
+            self.m.Dispatchable_tech,
             self.m.Days,
             self.m.Time_steps,
             within=pe.Binary,
