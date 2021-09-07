@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Single energy hub - single stage model for the optimal design of a distributed energy system including building retrofit options
+Single energy hub - single stage model for the optimal design of a multi-energy system including building retrofit options
 Author: Georgios Mavromatidis (ETH Zurich, gmavroma@ethz.ch)
 """
 
@@ -26,6 +26,7 @@ class EnergyHubRetrofit:
             * optim_mode (default = 3): 1: for cost minimization, 2: for carbon minimization, 3: for multi-objective optimization
             * num_of_pareto_points (default = 5): In case optim_mode is set to 3, then this specifies the number of Pareto points
         """
+        
         self.inp = eh_input_dict
         self.temp_res = temp_res
         self.optim_mode = optim_mode
@@ -42,7 +43,7 @@ class EnergyHubRetrofit:
 
         self.m = pe.ConcreteModel()
 
-        # Model sets
+        #%% Model sets
         # ==========
 
         # Temporal dimensions
@@ -54,13 +55,13 @@ class EnergyHubRetrofit:
         )
         self.m.Time_steps = pe.Set(
             initialize=self.inp["Time_steps"],
-            # ordererd=True,
+            ordered=True,
             doc="Time steps considered in the model | Index: t",
         )
         self.m.Calendar_days = pe.Set(
             initialize=list(range(1, 365 + 1)),
             ordered=True,
-            doc="Set for each calendar day of a full year",
+            doc="Set for each calendar day of a full year | Index: cd",
         )
         # Energy carriers
         # ---------------
@@ -102,17 +103,17 @@ class EnergyHubRetrofit:
         )
         self.m.Storage_tech = pe.Set(
             initialize=self.inp["Storage_tech"],
-            doc="The set of energy storage technologies for each energy hub candidate site | Index : strg_tech",
+            doc="The set of energy storage technologies for each energy hub candidate site | Index : stor_tech",
         )
 
         # Retrofitting
         # ------------
         self.m.Retrofit_scenarios = pe.Set(
             initialize=self.inp["Retrofit_scenarios"],
-            doc="Retrofit scenarios considered for the buildings connected to the energy hub",
+            doc="Retrofit scenarios considered for the building(s) connected to the energy hub",
         )
 
-        # Model parameters
+        #%% Model parameters
         # ================
 
         # Load parameters
@@ -129,6 +130,7 @@ class EnergyHubRetrofit:
         if self.temp_res == 1 or self.temp_res == 3:
             self.m.Number_of_days = pe.Param(
                 self.m.Days,
+                self.m.Retrofit_scenarios,
                 default=1,
                 initialize=self.inp["Number_of_days"],
                 doc="The number of days that each time step of typical day corresponds to",
@@ -136,6 +138,7 @@ class EnergyHubRetrofit:
         else:
             self.m.Number_of_days = pe.Param(
                 self.m.Days,
+                self.m.Retrofit_scenarios,
                 default=1,
                 initialize=1,
                 doc="Parameter equal to 1 for each time step, because full horizon optimization is performed (temp_res == 2)",
@@ -280,9 +283,9 @@ class EnergyHubRetrofit:
 
         def CRF_tech_rule(m, conv_tech):
             return (
-                self.m.Discount_rate
-                * (1 + self.m.Discount_rate) ** self.m.Lifetime_tech[conv_tech]
-            ) / ((1 + self.m.Discount_rate) ** self.m.Lifetime_tech[conv_tech] - 1)
+                m.Discount_rate
+                * (1 + m.Discount_rate) ** m.Lifetime_tech[conv_tech]
+            ) / ((1 + m.Discount_rate) ** m.Lifetime_tech[conv_tech] - 1)
 
         self.m.CRF_tech = pe.Param(
             self.m.Conversion_tech,
@@ -290,11 +293,11 @@ class EnergyHubRetrofit:
             doc="Capital Recovery Factor (CRF) used to annualise the investment cost of generation technologies",
         )
 
-        def CRF_stor_rule(m, strg_tech):
+        def CRF_stor_rule(m, stor_tech):
             return (
-                self.m.Discount_rate
-                * (1 + self.m.Discount_rate) ** self.m.Lifetime_stor[strg_tech]
-            ) / ((1 + self.m.Discount_rate) ** self.m.Lifetime_stor[strg_tech] - 1)
+                m.Discount_rate
+                * (1 + m.Discount_rate) ** m.Lifetime_stor[stor_tech]
+            ) / ((1 + m.Discount_rate) ** m.Lifetime_stor[stor_tech] - 1)
 
         self.m.CRF_stor = pe.Param(
             self.m.Storage_tech,
@@ -304,9 +307,9 @@ class EnergyHubRetrofit:
 
         def CRF_network_rule(m):
             return (
-                self.m.Discount_rate
-                * (1 + self.m.Discount_rate) ** self.m.Network_lifetime
-            ) / ((1 + self.m.Discount_rate) ** self.m.Network_lifetime - 1)
+                m.Discount_rate
+                * (1 + m.Discount_rate) ** m.Network_lifetime
+            ) / ((1 + m.Discount_rate) ** m.Network_lifetime - 1)
 
         self.m.CRF_network = pe.Param(
             initialize=CRF_network_rule,
@@ -315,9 +318,9 @@ class EnergyHubRetrofit:
 
         def CRF_retrofit_rule(m, ret):
             return (
-                self.m.Discount_rate
-                * (1 + self.m.Discount_rate) ** self.m.Lifetime_retrofit[ret]
-            ) / ((1 + self.m.Discount_rate) ** self.m.Lifetime_retrofit[ret] - 1)
+                m.Discount_rate
+                * (1 + m.Discount_rate) ** m.Lifetime_retrofit[ret]
+            ) / ((1 + m.Discount_rate) ** m.Lifetime_retrofit[ret] - 1)
 
         self.m.CRF_retrofit = pe.Param(
             self.m.Retrofit_scenarios,
@@ -353,7 +356,7 @@ class EnergyHubRetrofit:
         )
         self.m.BigM = pe.Param(default=10 ** 6, doc="Big M: Sufficiently large value")
 
-        # Model variables
+        #%% Model variables
         # ===============
 
         # Generation technologies
@@ -472,7 +475,9 @@ class EnergyHubRetrofit:
 
         # Bilinear term reformulations
         # ----------------------------
-        # These variables need to be defined in order to linearize the products of binary and continuous variables in the model. These are then in turn caused by the fact that when typical days are used, the "Number of typical days" parameter and the "P_solar" parameter differ per retrofit scenario
+        # These variables need to be defined in order to linearize the products of binary and continuous variables in the model.
+        # These are then in turn caused by the fact that when typical days are used,
+        # the "Number of typical days" parameter and the "P_solar" parameter differ per retrofit scenario
 
         self.m.z1 = pe.Var(
             self.m.Energy_carriers_imp,
@@ -494,7 +499,7 @@ class EnergyHubRetrofit:
             doc="Variable to represent the product: Conv_cap[sol] * y_retrofit[ret]",
         )
 
-        # Model constraints
+        #%% Model constraints
         # =================
 
         # Energy demand balances
@@ -504,9 +509,9 @@ class EnergyHubRetrofit:
                 m.P_conv[conv_tech, d, t] * m.Conv_factor[conv_tech, ec]
                 for conv_tech in m.Conversion_tech
             ) + sum(
-                m.Storage_tech_coupling[strg_tech, ec]
-                * (m.Qout[strg_tech, d, t] - m.Qin[strg_tech, d, t])
-                for strg_tech in m.Storage_tech
+                m.Storage_tech_coupling[stor_tech, ec]
+                * (m.Qout[stor_tech, d, t] - m.Qin[stor_tech, d, t])
+                for stor_tech in m.Storage_tech
             ) == sum(
                 m.y_retrofit[ret] * m.Demands[ec, ret, d, t]
                 for ret in m.Retrofit_scenarios
@@ -616,86 +621,86 @@ class EnergyHubRetrofit:
 
         # Storage constraints
         # -------------------
-        def Storage_balance_rule(m, strg_tech, d, t):
+        def Storage_balance_rule(m, stor_tech, d, t):
             if self.temp_res == 1:
                 if t != 1:
                     return (
-                        m.SoC[strg_tech, d, t]
-                        == (1 - m.Storage_standing_losses[strg_tech])
-                        * m.SoC[strg_tech, d, t - 1]
-                        + m.Storage_charging_eff[strg_tech] * m.Qin[strg_tech, d, t]
-                        - (1 / m.Storage_discharging_eff[strg_tech])
-                        * m.Qout[strg_tech, d, t]
+                        m.SoC[stor_tech, d, t]
+                        == (1 - m.Storage_standing_losses[stor_tech])
+                        * m.SoC[stor_tech, d, t - 1]
+                        + m.Storage_charging_eff[stor_tech] * m.Qin[stor_tech, d, t]
+                        - (1 / m.Storage_discharging_eff[stor_tech])
+                        * m.Qout[stor_tech, d, t]
                     )
                 else:
                     return (
-                        m.SoC[strg_tech, d, t]
-                        == (1 - m.Storage_standing_losses[strg_tech])
-                        * m.SoC[strg_tech, d, t + 23]
-                        + m.Storage_charging_eff[strg_tech] * m.Qin[strg_tech, d, t]
-                        - (1 / m.Storage_discharging_eff[strg_tech])
-                        * m.Qout[strg_tech, d, t]
+                        m.SoC[stor_tech, d, t]
+                        == (1 - m.Storage_standing_losses[stor_tech])
+                        * m.SoC[stor_tech, d, t + max(m.Time_steps) - 1]
+                        + m.Storage_charging_eff[stor_tech] * m.Qin[stor_tech, d, t]
+                        - (1 / m.Storage_discharging_eff[stor_tech])
+                        * m.Qout[stor_tech, d, t]
                     )
             elif self.temp_res == 2:
                 if t != 1:
                     return (
-                        m.SoC[strg_tech, d, t]
-                        == (1 - m.Storage_standing_losses[strg_tech])
-                        * m.SoC[strg_tech, d, t - 1]
-                        + m.Storage_charging_eff[strg_tech] * m.Qin[strg_tech, d, t]
-                        - (1 / m.Storage_discharging_eff[strg_tech])
-                        * m.Qout[strg_tech, d, t]
+                        m.SoC[stor_tech, d, t]
+                        == (1 - m.Storage_standing_losses[stor_tech])
+                        * m.SoC[stor_tech, d, t - 1]
+                        + m.Storage_charging_eff[stor_tech] * m.Qin[stor_tech, d, t]
+                        - (1 / m.Storage_discharging_eff[stor_tech])
+                        * m.Qout[stor_tech, d, t]
                     )
                 else:
                     if d != 1:
                         return (
-                            m.SoC[strg_tech, d, t]
-                            == (1 - m.Storage_standing_losses[strg_tech])
-                            * m.SoC[strg_tech, d - 1, t + 23]
-                            + m.Storage_charging_eff[strg_tech] * m.Qin[strg_tech, d, t]
-                            - (1 / m.Storage_discharging_eff[strg_tech])
-                            * m.Qout[strg_tech, d, t]
+                            m.SoC[stor_tech, d, t]
+                            == (1 - m.Storage_standing_losses[stor_tech])
+                            * m.SoC[stor_tech, d - 1, t + max(m.Time_steps) - 1]
+                            + m.Storage_charging_eff[stor_tech] * m.Qin[stor_tech, d, t]
+                            - (1 / m.Storage_discharging_eff[stor_tech])
+                            * m.Qout[stor_tech, d, t]
                         )
                     else:
                         return (
-                            m.SoC[strg_tech, d, t]
-                            == (1 - m.Storage_standing_losses[strg_tech])
-                            * m.SoC[strg_tech, d + 364, t + 23]
-                            + m.Storage_charging_eff[strg_tech] * m.Qin[strg_tech, d, t]
-                            - (1 / m.Storage_discharging_eff[strg_tech])
-                            * m.Qout[strg_tech, d, t]
+                            m.SoC[stor_tech, d, t]
+                            == (1 - m.Storage_standing_losses[stor_tech])
+                            * m.SoC[stor_tech, d + 364, t + max(m.Time_steps) - 1]
+                            + m.Storage_charging_eff[stor_tech] * m.Qin[stor_tech, d, t]
+                            - (1 / m.Storage_discharging_eff[stor_tech])
+                            * m.Qout[stor_tech, d, t]
                         )
             elif self.temp_res == 3:
                 if t != 1:
                     return (
-                        m.SoC[strg_tech, d, t]
-                        == (1 - m.Storage_standing_losses[strg_tech])
-                        * m.SoC[strg_tech, d, t - 1]
-                        + m.Storage_charging_eff[strg_tech]
-                        * m.Qin[strg_tech, m.C_to_T[d], t]
-                        - (1 / m.Storage_discharging_eff[strg_tech])
-                        * m.Qout[strg_tech, m.C_to_T[d], t]
+                        m.SoC[stor_tech, d, t]
+                        == (1 - m.Storage_standing_losses[stor_tech])
+                        * m.SoC[stor_tech, d, t - 1]
+                        + m.Storage_charging_eff[stor_tech]
+                        * m.Qin[stor_tech, m.C_to_T[d], t]
+                        - (1 / m.Storage_discharging_eff[stor_tech])
+                        * m.Qout[stor_tech, m.C_to_T[d], t]
                     )
                 else:
                     if d != 1:
                         return (
-                            m.SoC[strg_tech, d, t]
-                            == (1 - m.Storage_standing_losses[strg_tech])
-                            * m.SoC[strg_tech, d - 1, t + 23]
-                            + m.Storage_charging_eff[strg_tech]
-                            * m.Qin[strg_tech, m.C_to_T[d], t]
-                            - (1 / m.Storage_discharging_eff[strg_tech])
-                            * m.Qout[strg_tech, m.C_to_T[d], t]
+                            m.SoC[stor_tech, d, t]
+                            == (1 - m.Storage_standing_losses[stor_tech])
+                            * m.SoC[stor_tech, d - 1, t + max(m.Time_steps) - 1]
+                            + m.Storage_charging_eff[stor_tech]
+                            * m.Qin[stor_tech, m.C_to_T[d], t]
+                            - (1 / m.Storage_discharging_eff[stor_tech])
+                            * m.Qout[stor_tech, m.C_to_T[d], t]
                         )
                     else:
                         return (
-                            m.SoC[strg_tech, d, t]
-                            == (1 - m.Storage_standing_losses[strg_tech])
-                            * m.SoC[strg_tech, d + 364, t + 23]
-                            + m.Storage_charging_eff[strg_tech]
-                            * m.Qin[strg_tech, m.C_to_T[d], t]
-                            - (1 / m.Storage_discharging_eff[strg_tech])
-                            * m.Qout[strg_tech, m.C_to_T[d], t]
+                            m.SoC[stor_tech, d, t]
+                            == (1 - m.Storage_standing_losses[stor_tech])
+                            * m.SoC[stor_tech, d + max(m.Calendar_days) - 1, t + max(m.Time_steps) - 1]
+                            + m.Storage_charging_eff[stor_tech]
+                            * m.Qin[stor_tech, m.C_to_T[d], t]
+                            - (1 / m.Storage_discharging_eff[stor_tech])
+                            * m.Qout[stor_tech, m.C_to_T[d], t]
                         )
 
         if self.temp_res == 1 or self.temp_res == 2:
@@ -715,10 +720,10 @@ class EnergyHubRetrofit:
                 doc="Energy balance for the storage modules considering incoming and outgoing energy flows",
             )
 
-        def Storage_charg_rate_constr_rule(m, strg_tech, d, t):
+        def Storage_charg_rate_constr_rule(m, stor_tech, d, t):
             return (
-                m.Qin[strg_tech, d, t]
-                <= m.Storage_max_charge[strg_tech] * m.Storage_cap[strg_tech]
+                m.Qin[stor_tech, d, t]
+                <= m.Storage_max_charge[stor_tech] * m.Storage_cap[stor_tech]
             )
 
         self.m.Storage_charg_rate_constr = pe.Constraint(
@@ -729,10 +734,10 @@ class EnergyHubRetrofit:
             doc="Constraint for the maximum allowable charging rate of the storage technologies",
         )
 
-        def Storage_discharg_rate_constr_rule(m, strg_tech, d, t):
+        def Storage_discharg_rate_constr_rule(m, stor_tech, d, t):
             return (
-                m.Qout[strg_tech, d, t]
-                <= m.Storage_max_charge[strg_tech] * m.Storage_cap[strg_tech]
+                m.Qout[stor_tech, d, t]
+                <= m.Storage_max_charge[stor_tech] * m.Storage_cap[stor_tech]
             )
 
         self.m.Storage_discharg_rate_constr = pe.Constraint(
@@ -743,8 +748,8 @@ class EnergyHubRetrofit:
             doc="Constraint for the maximum allowable discharging rate of the storage technologies",
         )
 
-        def Storage_cap_constr_rule(m, strg_tech, d, t):
-            return m.SoC[strg_tech, d, t] <= m.Storage_cap[strg_tech]
+        def Storage_cap_constr_rule(m, stor_tech, d, t):
+            return m.SoC[stor_tech, d, t] <= m.Storage_cap[stor_tech]
 
         if self.temp_res == 1 or self.temp_res == 2 :
             self.m.Storage_cap_constr = pe.Constraint(
@@ -763,9 +768,8 @@ class EnergyHubRetrofit:
                 doc="Constraint for non-violation of the capacity of the storage",
             )
             
-
-        def Max_allowable_storage_cap_rule(m, strg_tech):
-            return m.Storage_cap[strg_tech] <= m.Storage_max_cap[strg_tech]
+        def Max_allowable_storage_cap_rule(m, stor_tech):
+            return m.Storage_cap[stor_tech] <= m.Storage_max_cap[stor_tech]
 
         self.m.Max_allowable_storage_cap = pe.Constraint(
             self.m.Storage_tech,
@@ -773,8 +777,8 @@ class EnergyHubRetrofit:
             doc="Constraint enforcing the maximum allowable storage capacity per type of storage technology",
         )
 
-        def Fixed_cost_storage_rule(m, strg_tech):
-            return m.Storage_cap[strg_tech] <= m.BigM * m.y_stor[strg_tech]
+        def Fixed_cost_storage_rule(m, stor_tech):
+            return m.Storage_cap[stor_tech] <= m.BigM * m.y_stor[stor_tech]
 
         self.m.Fixed_cost_storage = pe.Constraint(
             self.m.Storage_tech,
@@ -796,8 +800,8 @@ class EnergyHubRetrofit:
         # ------------------------------
         def Import_cost_rule(m):
             return m.Import_cost == sum(
-                # m.Import_prices[ec_imp] * m.P_import[ec_imp, d, t] * m.Number_of_days[d] * m.y_retrofit[ret]
-                m.Import_prices[ec_imp] * m.Number_of_days[d] * m.z1[ec_imp, ret, d, t]
+                # m.Import_prices[ec_imp] * m.P_import[ec_imp, d, t] * m.Number_of_days[d, ret] * m.y_retrofit[ret]
+                m.Import_prices[ec_imp] * m.Number_of_days[d, ret] * m.z1[ec_imp, ret, d, t]
                 for ec_imp in m.Energy_carriers_imp
                 for ret in m.Retrofit_scenarios
                 for d in m.Days
@@ -811,8 +815,8 @@ class EnergyHubRetrofit:
 
         def Export_profit_rule(m):
             return m.Export_profit == sum(
-                # m.Export_prices[ec_exp] * m.P_export[ec_exp, d, t] * m.Number_of_days[d] * m.y_retrofit[ret]
-                m.Export_prices[ec_exp] * m.Number_of_days[d] * m.z2[ec_exp, ret, d, t]
+                # m.Export_prices[ec_exp] * m.P_export[ec_exp, d, t] * m.Number_of_days[d, ret] * m.y_retrofit[ret]
+                m.Export_prices[ec_exp] * m.Number_of_days[d, ret] * m.z2[ec_exp, ret, d, t]
                 for ec_exp in m.Energy_carriers_exp
                 for ret in m.Retrofit_scenarios
                 for d in m.Days
@@ -834,11 +838,11 @@ class EnergyHubRetrofit:
                 for conv_tech in m.Conversion_tech
             ) + sum(
                 (
-                    m.Fixed_stor_costs[strg_tech] * m.y_stor[strg_tech]
-                    + m.Linear_stor_costs[strg_tech] * m.Storage_cap[strg_tech]
+                    m.Fixed_stor_costs[stor_tech] * m.y_stor[stor_tech]
+                    + m.Linear_stor_costs[stor_tech] * m.Storage_cap[stor_tech]
                 )
-                * m.CRF_stor[strg_tech]
-                for strg_tech in m.Storage_tech
+                * m.CRF_stor[stor_tech]
+                for stor_tech in m.Storage_tech
             ) + m.Network_inv_cost_per_m * m.Network_length * m.CRF_network + sum(
                 m.y_retrofit[ret] * m.Retrofit_inv_costs[ret] * m.CRF_retrofit[ret]
                 for ret in m.Retrofit_scenarios
@@ -859,9 +863,9 @@ class EnergyHubRetrofit:
 
         def Total_carbon_rule(m):
             return m.Total_carbon == sum(
-                # m.Carbon_factors_import[ec_imp] * m.P_import[ec_imp, d, t] * m.Number_of_days[d] * m.y_retrofit[ret]
+                # m.Carbon_factors_import[ec_imp] * m.P_import[ec_imp, d, t] * m.Number_of_days[d, ret] * m.y_retrofit[ret]
                 m.Carbon_factors_import[ec_imp]
-                * m.Number_of_days[d]
+                * m.Number_of_days[d, ret]
                 * m.z1[ec_imp, ret, d, t]
                 for ec_imp in m.Energy_carriers_imp
                 for ret in m.Retrofit_scenarios
@@ -1028,7 +1032,7 @@ class EnergyHubRetrofit:
             doc="Auxiliary constraint for variable z3",
         )
 
-        # Objective functions
+        #%% Objective functions
         # ===================
 
         # Cost objective
@@ -1251,6 +1255,4 @@ class EnergyHubRetrofit:
             file.close()
 
 if __name__ == "__main__":
-    sp = EnergyHubRetrofit("Input_data_retrofit", 1, 1, 1)
-    sp.create_model()  # Create model
-    (obj, dsgn, oper, ret) = sp.solve()
+    pass
