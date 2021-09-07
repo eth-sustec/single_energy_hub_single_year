@@ -5,8 +5,6 @@
 
 import pandas as pd
 
-# import numpy as np
-
 ehr_inp = dict()
 
 # Defining input values for model sets
@@ -32,43 +30,36 @@ ehr_inp["Retrofit_scenarios"] = ["Noretrofit", "Wall", "Fullretrofit"]
 # ==========================================
 Demands = pd.read_excel(
     "Time_series_inputs_retrofit.xlsx",
-    usecols="A:D",
     index_col=[0, 1],
-    header=[0],
-    sheet_name="Loads_solar",
+    header=[0, 1],
+    sheet_name="Loads",
 )  # Read from some Excel/.csv file
-ehr_inp["Demands"] = Demands.stack().reorder_levels([2, 0, 1]).to_dict()
+ehr_inp["Demands"] = Demands.stack().stack().reorder_levels([3, 2, 0, 1]).to_dict()
 
 Number_of_days = pd.read_excel(
-    "Time_series_inputs.xlsx",
-    usecols="A:B",
+    "Time_series_inputs_retrofit.xlsx",
     index_col=0,
     header=0,
     sheet_name="Number_of_days",
 )  # Read from some Excel/.csv file
-Number_of_days = Number_of_days.to_dict()
-ehr_inp["Number_of_days"] = Number_of_days["Number_of_days"]
+ehr_inp["Number_of_days"] = Number_of_days.stack().reorder_levels([1,0]).to_dict()
 
 C_to_T = pd.read_excel(
     "Time_series_inputs_retrofit.xlsx",
-    usecols="A:B",
     index_col=0,
-    header=None,
+    header=0,
     sheet_name="C_to_T_matching",
 )  # Read from some Excel/.csv file
-C_to_T = C_to_T.to_dict()
-ehr_inp["C_to_T"] = C_to_T[1]
+ehr_inp["C_to_T"] = C_to_T.stack().reorder_levels([1,0]).to_dict()
 
 
 P_solar = pd.read_excel(
     "Time_series_inputs_retrofit.xlsx",
-    usecols="A:B,E",
     index_col=[0, 1],
     header=[0],
-    sheet_name="Loads_solar",
+    sheet_name="Solar",
 )  # Read from some Excel/.csv file
-P_solar = P_solar.to_dict()
-ehr_inp["P_solar"] = P_solar["P_solar"]
+ehr_inp["P_solar"] = P_solar.stack().reorder_levels([2,0,1]).to_dict()
 
 ehr_inp["Discount_rate"] = 0.080
 
@@ -78,7 +69,6 @@ ehr_inp["Network_lifetime"] = 40
 ehr_inp["Network_inv_cost_per_m"] = 800
 
 ehr_inp["Roof_area"] = 1260
-
 
 # Generation technologies
 # -----------------------
