@@ -1047,13 +1047,9 @@ class EnergyHubRetrofit:
 
         self.m.Carbon_obj = pe.Objective(rule=carbon_obj_rule, sense=pe.minimize)
 
-    def solve(self):
+    def solve(self, mip_gap=0.001, time_limit=10 ** 8, results_folder=".\\"):
         """
         Solves the model and outputs model results
-
-        Usage:
-        ------
-            (obj, des, oper) = solve()
 
         Two types of model outputs are generated:
 
@@ -1074,17 +1070,13 @@ class EnergyHubRetrofit:
         # Solver definition
         # -----------------
         optimizer = pyomo.opt.SolverFactory("gurobi")
-        # optimizer.options["MIPGap"] = 0.05
-        # optimizer.options["TimeLimit"] = 3600*96-300
+        optimizer.options["MIPGap"] = mip_gap
+        optimizer.options["TimeLimit"] = time_limit
 
         if self.optim_mode == 1:
 
             # Cost minimization
             # =================
-            obj = [None]
-            dsgn = [None]
-            oper = [None]
-            ret = [None]
             all_vars = [None]
 
             self.m.Carbon_obj.deactivate()
@@ -1095,37 +1087,31 @@ class EnergyHubRetrofit:
             # Save results
             # ------------
             self.m.solutions.store_to(results)
+            all_vars[0] = of.get_all_vars(self.m)
+
+            # JSON file with results
             results.write(
-                filename="cost_min_solver_results.json", format="json"
-            )  # JSON file with results
-            of.pickle_solver_results(
-                self.m, "cost_min_solver_results.p"
-            )  # Write a pickle file with the SolverResults object
+                filename=results_folder + "\cost_min_solver_results.json", format="json"
+            )
 
-            obj[0] = of.get_obj_results(self.m)
-            dsgn[0] = of.get_design_results(self.m)
-            oper[0] = of.get_oper_results(self.m)
-            ret[0] = of.get_retrofit_results(self.m)
-
-            all_vars[0] = of.get_all_vars_retrofit(self.m)
-            file = open("cost_min.p", "wb")
+            # Pickle file with all variable values
+            file = open(results_folder + "\cost_min.p", "wb")
             pkl.dump(all_vars, file)
             file.close()
+
+            # Excel file with all variable values
+            of.write_all_vars_to_excel(all_vars[0], results_folder + "\cost_min")
 
         elif self.optim_mode == 2:
 
             # Carbon minimization
             # ===================
-            obj = [None]
-            dsgn = [None]
-            oper = [None]
-            ret = [None]
             all_vars = [None]
 
             self.m.Carbon_obj.activate()
             self.m.Cost_obj.deactivate()
             optimizer.solve(self.m, tee=True, keepfiles=True, logfile="gur.log")
-            carb_min = pe.value(self.m.Total_carbon)
+            carb_min = pe.value(self.m.Total_system_carbon) * 1.01
 
             self.m.epsilon = carb_min
             self.m.Carbon_obj.deactivate()
@@ -1137,29 +1123,25 @@ class EnergyHubRetrofit:
             # Save results
             # ------------
             self.m.solutions.store_to(results)
+            all_vars[0] = of.get_all_vars(self.m)
+
+            # JSON file with results
             results.write(
-                filename="carb_min_solver_results.json", format="json"
-            )  # JSON file with results
-            of.pickle_solver_results(
-                self.m, "carb_min_solver_results.p"
-            )  # Write a pickle file with the SolverResults object
+                filename=results_folder + "\carb_min_solver_results.json", format="json"
+            )
 
-            obj[0] = of.get_obj_results(self.m)
-            dsgn[0] = of.get_design_results(self.m)
-            oper[0] = of.get_oper_results(self.m)
-            ret[0] = of.get_retrofit_results(self.m)
-
-            all_vars[0] = of.get_all_vars_retrofit(self.m)
-            file = open("carb_min.p", "wb")
+            # Pickle file with all variable values
+            file = open(results_folder + "\carb_min.p", "wb")
             pkl.dump(all_vars, file)
             file.close()
 
+            # Excel file with all variable values
+            of.write_all_vars_to_excel(all_vars[0], results_folder + "\carb_min")
+
         else:
 
-            obj = [None] * (self.num_of_pfp + 2)
-            dsgn = [None] * (self.num_of_pfp + 2)
-            oper = [None] * (self.num_of_pfp + 2)
-            ret = [None] * (self.num_of_pfp + 2)
+            # Multi-objective optimization
+            # ============================
             all_vars = [None] * (self.num_of_pfp + 2)
 
             # Cost minimization
@@ -1168,30 +1150,32 @@ class EnergyHubRetrofit:
             results = optimizer.solve(
                 self.m, tee=True, keepfiles=True, logfile="gur.log"
             )
-            carb_max = pe.value(self.m.Total_carbon)
+            carb_max = pe.value(self.m.Total_system_carbon)
 
             # Save results
             # ------------
             self.m.solutions.store_to(results)
-            results.write(
-                filename="MO_solver_results_1.json", format="json"
-            )  # JSON file with results
-            of.pickle_solver_results(
-                self.m, "MO_solver_results_1.p"
-            )  # Write a pickle file with the SolverResults object
+            all_vars[0] = of.get_all_vars(self.m)
 
-            obj[0] = of.get_obj_results(self.m)
-            dsgn[0] = of.get_design_results(self.m)
-            oper[0] = of.get_oper_results(self.m)
-            ret[0] = of.get_retrofit_results(self.m)
-            all_vars[0] = of.get_all_vars_retrofit(self.m)
+            # JSON file with results
+            results.write(
+                filename=results_folder + "\MO_solver_results_1.json", format="json"
+            )
+
+            # Pickle file with all variable values
+            file = open(results_folder + "\multi_obj_1.p", "wb")
+            pkl.dump([all_vars[0]], file)
+            file.close()
+
+            # Excel file with all variable values
+            of.write_all_vars_to_excel(all_vars[0], results_folder + "\multi_obj_1")
 
             # Carbon minimization
             # -------------------
             self.m.Carbon_obj.activate()
             self.m.Cost_obj.deactivate()
             optimizer.solve(self.m, tee=True, keepfiles=True, logfile="gur.log")
-            carb_min = pe.value(self.m.Total_carbon)
+            carb_min = pe.value(self.m.Total_system_carbon) * 1.01
 
             # Pareto points
             # -------------
@@ -1206,18 +1190,20 @@ class EnergyHubRetrofit:
                 # Save results
                 # ------------
                 self.m.solutions.store_to(results)
-                results.write(
-                    filename="MO_solver_results_2.json", format="json"
-                )  # JSON file with results
-                of.pickle_solver_results(
-                    sp.m, "MO_solver_results_2.p"
-                )  # Write a pickle file with the SolverResults object
+                all_vars[1] = of.get_all_vars(self.m)
 
-                obj[1] = of.get_obj_results(self.m)
-                dsgn[1] = of.get_design_results(self.m)
-                oper[1] = of.get_oper_results(self.m)
-                ret[1] = of.get_retrofit_results(self.m)
-                all_vars[1] = of.get_all_vars_retrofit(self.m)
+                # JSON file with results
+                results.write(
+                    filename=results_folder + "\MO_solver_results_2.json", format="json"
+                )
+
+                # Pickle file with all variable values
+                file = open(results_folder + "\multi_obj_2.p", "wb")
+                pkl.dump([all_vars[1]], file)
+                file.close()
+
+                # Excel file with all variable values
+                of.write_all_vars_to_excel(all_vars[1], results_folder + "\multi_obj_2")
 
             else:
                 self.m.Carbon_obj.deactivate()
@@ -1230,6 +1216,7 @@ class EnergyHubRetrofit:
 
                 for i in range(1, self.num_of_pfp + 1 + 1):
                     self.m.epsilon = steps[i - 1]
+                    print(self.m.epsilon.extract_values())
                     results = optimizer.solve(
                         self.m, tee=True, keepfiles=True, logfile="gur.log"
                     )
@@ -1237,26 +1224,33 @@ class EnergyHubRetrofit:
                     # Save results
                     # ------------
                     self.m.solutions.store_to(results)
+                    all_vars[i] = of.get_all_vars(self.m)
+
+                    # JSON file with results
                     results.write(
-                        filename="MO_solver_results_" + str(i + 1) + ".json",
+                        filename=results_folder
+                                 + "\MO_solver_results_"
+                                 + str(i + 1)
+                                 + ".json",
                         format="json",
-                    )  # JSON file with results
-                    of.pickle_solver_results(
-                        self.m, "MO_solver_results_" + str(i + 1) + ".p"
-                    )  # Write a pickle file with the SolverResults object
+                    )
 
-                    obj[i] = of.get_obj_results(self.m)
-                    dsgn[i] = of.get_design_results(self.m)
-                    oper[i] = of.get_oper_results(self.m)
-                    ret[i] = of.get_retrofit_results(self.m)
-                    all_vars[i] = of.get_all_vars_retrofit(self.m)
+                    # Pickle file with all variable values
+                    file = open(
+                        results_folder + "\multi_obj_" + str(i + 1) + ".p", "wb"
+                    )
+                    pkl.dump([all_vars[i]], file)
+                    file.close()
 
-            file = open("multi_obj.p", "wb")
+                    # Excel file with all variable values
+                    of.write_all_vars_to_excel(
+                        all_vars[i], results_folder + "\multi_obj_" + str(i + 1)
+                    )
+
+            # Pickle file with all variable values for all multi-objective runs
+            file = open(results_folder + "\multi_obj_all_points.p", "wb")
             pkl.dump(all_vars, file)
             file.close()
-
-        return obj, dsgn, oper, ret
-
 
 if __name__ == "__main__":
     sp = EnergyHubRetrofit("Input_data_retrofit", 1, 1, 1)
