@@ -137,14 +137,15 @@ class EnergyHubRetrofit:
             )
         else:
             self.m.Number_of_days = pe.Param(
-                self.m.Days,
                 self.m.Retrofit_scenarios,
+                self.m.Days,                
                 default=1,
                 initialize=1,
                 doc="Parameter equal to 1 for each time step, because full horizon optimization is performed (temp_res == 2)",
             )
         if self.temp_res == 3:
             self.m.C_to_T = pe.Param(
+                self.m.Retrofit_scenarios,
                 self.m.Calendar_days,
                 initialize=self.inp["C_to_T"],
                 within=self.m.Days,
@@ -498,6 +499,20 @@ class EnergyHubRetrofit:
             self.m.Retrofit_scenarios,
             doc="Variable to represent the product: Conv_cap[sol] * y_retrofit[ret]",
         )
+        self.m.z4 = pe.Var(
+            self.m.Storage_tech,
+            self.m.Retrofit_scenarios,
+            self.m.Days,
+            self.m.Time_steps,
+            doc="Variable to represent the product Qin[stor_tech, d, t] * y_retrofit[ret] | Useful only when temp_res = 3 and the C_to_T parameter is used",
+        )
+        self.m.z5 = pe.Var(
+            self.m.Storage_tech,
+            self.m.Retrofit_scenarios,
+            self.m.Days,
+            self.m.Time_steps,
+            doc="Variable to represent the product Qout[stor_tech, d, t] * y_retrofit[ret] | Useful only when temp_res = 3 and the C_to_T parameter is used",
+        )
 
         #%% Model constraints
         # =================
@@ -676,10 +691,17 @@ class EnergyHubRetrofit:
                         m.SoC[stor_tech, d, t]
                         == (1 - m.Storage_standing_losses[stor_tech])
                         * m.SoC[stor_tech, d, t - 1]
-                        + m.Storage_charging_eff[stor_tech]
-                        * m.Qin[stor_tech, m.C_to_T[d], t]
+                        + m.Storage_charging_eff[stor_tech] * sum(
+                        # m.Qin[stor_tech, m.C_to_T[ret, d], t] * m.y_retrofit[ret]
+                        m.z4[stor_tech, ret, m.C_to_T[ret, d], t]
+                        for ret in m.Retrofit_scenarios
+                        )
                         - (1 / m.Storage_discharging_eff[stor_tech])
-                        * m.Qout[stor_tech, m.C_to_T[d], t]
+                        * sum(
+                        # m.Qout[stor_tech, m.C_to_T[ret, d], t] * m.y_retrofit[ret]
+                        m.z5[stor_tech, ret, m.C_to_T[ret, d], t]
+                        for ret in m.Retrofit_scenarios
+                        )
                     )
                 else:
                     if d != 1:
@@ -687,20 +709,34 @@ class EnergyHubRetrofit:
                             m.SoC[stor_tech, d, t]
                             == (1 - m.Storage_standing_losses[stor_tech])
                             * m.SoC[stor_tech, d - 1, t + max(m.Time_steps) - 1]
-                            + m.Storage_charging_eff[stor_tech]
-                            * m.Qin[stor_tech, m.C_to_T[d], t]
+                            + m.Storage_charging_eff[stor_tech] * sum(
+                            # m.Qin[stor_tech, m.C_to_T[ret, d], t] * m.y_retrofit[ret]
+                            m.z4[stor_tech, ret, m.C_to_T[ret, d], t]
+                            for ret in m.Retrofit_scenarios
+                            )
                             - (1 / m.Storage_discharging_eff[stor_tech])
-                            * m.Qout[stor_tech, m.C_to_T[d], t]
+                            * sum(
+                            # m.Qout[stor_tech, m.C_to_T[ret, d], t] * m.y_retrofit[ret]
+                            m.z5[stor_tech, ret, m.C_to_T[ret, d], t]
+                            for ret in m.Retrofit_scenarios
+                            )
                         )
                     else:
                         return (
                             m.SoC[stor_tech, d, t]
                             == (1 - m.Storage_standing_losses[stor_tech])
                             * m.SoC[stor_tech, d + max(m.Calendar_days) - 1, t + max(m.Time_steps) - 1]
-                            + m.Storage_charging_eff[stor_tech]
-                            * m.Qin[stor_tech, m.C_to_T[d], t]
+                            + m.Storage_charging_eff[stor_tech] * sum(
+                            # m.Qin[stor_tech, m.C_to_T[ret, d], t] * m.y_retrofit[ret]
+                            m.z4[stor_tech, ret, m.C_to_T[ret, d], t]
+                            for ret in m.Retrofit_scenarios
+                            )
                             - (1 / m.Storage_discharging_eff[stor_tech])
-                            * m.Qout[stor_tech, m.C_to_T[d], t]
+                            * sum(
+                            # m.Qout[stor_tech, m.C_to_T[ret, d], t] * m.y_retrofit[ret]
+                            m.z5[stor_tech, ret, m.C_to_T[ret, d], t]
+                            for ret in m.Retrofit_scenarios
+                            )
                         )
 
         if self.temp_res == 1 or self.temp_res == 2:
@@ -800,8 +836,8 @@ class EnergyHubRetrofit:
         # ------------------------------
         def Import_cost_rule(m):
             return m.Import_cost == sum(
-                # m.Import_prices[ec_imp] * m.P_import[ec_imp, d, t] * m.Number_of_days[d, ret] * m.y_retrofit[ret]
-                m.Import_prices[ec_imp] * m.Number_of_days[d, ret] * m.z1[ec_imp, ret, d, t]
+                # m.Import_prices[ec_imp] * m.P_import[ec_imp, d, t] * m.Number_of_days[ret, d] * m.y_retrofit[ret]
+                m.Import_prices[ec_imp] * m.Number_of_days[ret, d] * m.z1[ec_imp, ret, d, t]
                 for ec_imp in m.Energy_carriers_imp
                 for ret in m.Retrofit_scenarios
                 for d in m.Days
@@ -815,8 +851,8 @@ class EnergyHubRetrofit:
 
         def Export_profit_rule(m):
             return m.Export_profit == sum(
-                # m.Export_prices[ec_exp] * m.P_export[ec_exp, d, t] * m.Number_of_days[d, ret] * m.y_retrofit[ret]
-                m.Export_prices[ec_exp] * m.Number_of_days[d, ret] * m.z2[ec_exp, ret, d, t]
+                # m.Export_prices[ec_exp] * m.P_export[ec_exp, d, t] * m.Number_of_days[ret, d] * m.y_retrofit[ret]
+                m.Export_prices[ec_exp] * m.Number_of_days[ret, d] * m.z2[ec_exp, ret, d, t]
                 for ec_exp in m.Energy_carriers_exp
                 for ret in m.Retrofit_scenarios
                 for d in m.Days
@@ -863,9 +899,9 @@ class EnergyHubRetrofit:
 
         def Total_carbon_rule(m):
             return m.Total_carbon == sum(
-                # m.Carbon_factors_import[ec_imp] * m.P_import[ec_imp, d, t] * m.Number_of_days[d, ret] * m.y_retrofit[ret]
+                # m.Carbon_factors_import[ec_imp] * m.P_import[ec_imp, d, t] * m.Number_of_days[ret, d] * m.y_retrofit[ret]
                 m.Carbon_factors_import[ec_imp]
-                * m.Number_of_days[d, ret]
+                * m.Number_of_days[ret, d]
                 * m.z1[ec_imp, ret, d, t]
                 for ec_imp in m.Energy_carriers_imp
                 for ret in m.Retrofit_scenarios
@@ -1030,6 +1066,106 @@ class EnergyHubRetrofit:
             self.m.Retrofit_scenarios,
             rule=z3_rule_4,
             doc="Auxiliary constraint for variable z3",
+        )
+
+        def z4_rule_1(m, stor_tech, ret, d, t):
+            return m.z4[stor_tech, ret, d, t] >= 0
+
+        self.m.z4_rule_1_constr = pe.Constraint(
+            self.m.Storage_tech,
+            self.m.Retrofit_scenarios,
+            self.m.Days,
+            self.m.Time_steps,
+            rule=z4_rule_1,
+            doc="Auxiliary constraint for variable z4",
+        )
+
+        def z4_rule_2(m, stor_tech, ret, d, t):
+            return m.z4[stor_tech, ret, d, t] <= m.BigM * m.y_retrofit[ret]
+
+        self.m.z4_rule_2_constr = pe.Constraint(
+            self.m.Storage_tech,
+            self.m.Retrofit_scenarios,
+            self.m.Days,
+            self.m.Time_steps,
+            rule=z4_rule_2,
+            doc="Auxiliary constraint for variable z4",
+        )
+
+        def z4_rule_3(m, stor_tech, ret, d, t):
+            return m.Qin[stor_tech, d, t] - m.z4[stor_tech, ret, d, t] >= 0
+
+        self.m.z4_rule_3_constr = pe.Constraint(
+            self.m.Storage_tech,
+            self.m.Retrofit_scenarios,
+            self.m.Days,
+            self.m.Time_steps,
+            rule=z4_rule_3,
+            doc="Auxiliary constraint for variable z4",
+        )
+
+        def z4_rule_4(m, stor_tech, ret, d, t):
+            return m.Qin[stor_tech, d, t] - m.z4[stor_tech, ret, d, t] <= m.BigM * (
+                1 - m.y_retrofit[ret]
+            )
+
+        self.m.z4_rule_4_constr = pe.Constraint(
+            self.m.Storage_tech,
+            self.m.Retrofit_scenarios,
+            self.m.Days,
+            self.m.Time_steps,
+            rule=z4_rule_4,
+            doc="Auxiliary constraint for variable z4",
+        )
+
+        def z5_rule_1(m, stor_tech, ret, d, t):
+            return m.z5[stor_tech, ret, d, t] >= 0
+
+        self.m.z5_rule_1_constr = pe.Constraint(
+            self.m.Storage_tech,
+            self.m.Retrofit_scenarios,
+            self.m.Days,
+            self.m.Time_steps,
+            rule=z5_rule_1,
+            doc="Auxiliary constraint for variable z5",
+        )
+
+        def z5_rule_2(m, stor_tech, ret, d, t):
+            return m.z5[stor_tech, ret, d, t] <= m.BigM * m.y_retrofit[ret]
+
+        self.m.z5_rule_2_constr = pe.Constraint(
+            self.m.Storage_tech,
+            self.m.Retrofit_scenarios,
+            self.m.Days,
+            self.m.Time_steps,
+            rule=z5_rule_2,
+            doc="Auxiliary constraint for variable z5",
+        )
+
+        def z5_rule_3(m, stor_tech, ret, d, t):
+            return m.Qout[stor_tech, d, t] - m.z5[stor_tech, ret, d, t] >= 0
+
+        self.m.z5_rule_3_constr = pe.Constraint(
+            self.m.Storage_tech,
+            self.m.Retrofit_scenarios,
+            self.m.Days,
+            self.m.Time_steps,
+            rule=z5_rule_3,
+            doc="Auxiliary constraint for variable z5",
+        )
+
+        def z5_rule_4(m, stor_tech, ret, d, t):
+            return m.Qout[stor_tech, d, t] - m.z5[stor_tech, ret, d, t] <= m.BigM * (
+                1 - m.y_retrofit[ret]
+            )
+
+        self.m.z5_rule_4_constr = pe.Constraint(
+            self.m.Storage_tech,
+            self.m.Retrofit_scenarios,
+            self.m.Days,
+            self.m.Time_steps,
+            rule=z5_rule_4,
+            doc="Auxiliary constraint for variable z5",
         )
 
         #%% Objective functions
