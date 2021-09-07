@@ -129,8 +129,8 @@ class EnergyHubRetrofit:
         )
         if self.temp_res == 1 or self.temp_res == 3:
             self.m.Number_of_days = pe.Param(
-                self.m.Days,
                 self.m.Retrofit_scenarios,
+                self.m.Days,
                 default=1,
                 initialize=self.inp["Number_of_days"],
                 doc="The number of days that each time step of typical day corresponds to",
