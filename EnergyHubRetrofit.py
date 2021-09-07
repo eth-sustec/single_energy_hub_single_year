@@ -15,20 +15,18 @@ import numpy as np
 class EnergyHubRetrofit:
     """This class implements a standard energy hub model for the optimal design and operation of distributed multi-energy systems"""
 
-    def __init__(self, input_file, temp_res=1, optim_mode=3, num_of_pareto_points=5):
+    def __init__(self, eh_input_dict, temp_res=1, optim_mode=3, num_of_pareto_points=5):
         """
         __init__ function to read in the input data and begin the model creation process
 
         Inputs to the function:
         -----------------------
-            * input_file: .py file where the values for all model parameters are defined
+            * eh_input_dict: dictionary that holds all the values for the model parameters
             * temp_res (default = 1): 1: typical days optimization, 2: full horizon optimization (8760 hours), 3: typical days with continous storage state-of-charge
             * optim_mode (default = 3): 1: for cost minimization, 2: for carbon minimization, 3: for multi-objective optimization
             * num_of_pareto_points (default = 5): In case optim_mode is set to 3, then this specifies the number of Pareto points
         """
-        import importlib
-
-        self.inp = importlib.import_module(input_file)
+        self.inp = eh_input_dict
         self.temp_res = temp_res
         self.optim_mode = optim_mode
         if self.optim_mode == 1 or self.optim_mode == 2:
@@ -50,12 +48,12 @@ class EnergyHubRetrofit:
         # Temporal dimensions
         # -------------------
         self.m.Days = pe.Set(
-            initialize=self.inp.Days,
+            initialize=self.inp["Days"],
             ordered=True,
             doc="The number of days considered in each year of the model | Index: d",
         )
         self.m.Time_steps = pe.Set(
-            initialize=self.inp.Time_steps,
+            initialize=self.inp["Time_steps"],
             # ordererd=True,
             doc="Time steps considered in the model | Index: t",
         )
@@ -67,21 +65,21 @@ class EnergyHubRetrofit:
         # Energy carriers
         # ---------------
         self.m.Energy_carriers = pe.Set(
-            initialize=self.inp.Energy_carriers,
+            initialize=self.inp["Energy_carriers"],
             doc="The set of all energy carriers considered in the model | Index : ec",
         )
         self.m.Energy_carriers_imp = pe.Set(
-            initialize=self.inp.Energy_carriers_imp,
+            initialize=self.inp["Energy_carriers_imp"],
             within=self.m.Energy_carriers,
             doc="The set of energy carriers for which imports are possible | Index : ec_imp",
         )
         self.m.Energy_carriers_exp = pe.Set(
-            initialize=self.inp.Energy_carriers_exp,
+            initialize=self.inp["Energy_carriers_exp"],
             within=self.m.Energy_carriers,
             doc="The set of energy carriers for which exports are possible | Index : ec_exp",
         )
         self.m.Energy_carriers_dem = pe.Set(
-            initialize=self.inp.Energy_carriers_dem,
+            initialize=self.inp["Energy_carriers_dem"],
             within=self.m.Energy_carriers,
             doc="The set of energy carriers for which end-user demands are defined | Index : ec_dem",
         )
@@ -89,28 +87,28 @@ class EnergyHubRetrofit:
         # Technologies
         # ------------
         self.m.Conversion_tech = pe.Set(
-            initialize=self.inp.Conversion_tech,
+            initialize=self.inp["Conversion_tech"],
             doc="The energy conversion technologies of each energy hub candidate site | Index : conv_tech",
         )
         self.m.Solar_tech = pe.Set(
-            initialize=self.inp.Solar_tech,
+            initialize=self.inp["Solar_tech"],
             within=self.m.Conversion_tech,
             doc="Subset for solar technologies | Index : sol",
         )
         self.m.Dispatchable_tech = pe.Set(
-            initialize=self.inp.Dispatchable_tech,
+            initialize=self.inp["Dispatchable_tech"],
             within=self.m.Conversion_tech,
             doc="Subset for dispatchable/controllable technologies | Index : disp",
         )
         self.m.Storage_tech = pe.Set(
-            initialize=self.inp.Storage_tech,
+            initialize=self.inp["Storage_tech"],
             doc="The set of energy storage technologies for each energy hub candidate site | Index : strg_tech",
         )
 
         # Retrofitting
         # ------------
         self.m.Retrofit_scenarios = pe.Set(
-            initialize=self.inp.Retrofit_scenarios,
+            initialize=self.inp["Retrofit_scenarios"],
             doc="Retrofit scenarios considered for the buildings connected to the energy hub",
         )
 
@@ -125,14 +123,14 @@ class EnergyHubRetrofit:
             self.m.Days,
             self.m.Time_steps,
             default=0,
-            initialize=self.inp.Demands,
+            initialize=self.inp["Demands"],
             doc="Time-varying energy demand patterns for the energy hub",
         )
         if self.temp_res == 1 or self.temp_res == 3:
             self.m.Number_of_days = pe.Param(
                 self.m.Days,
                 default=1,
-                initialize=self.inp.Number_of_days,
+                initialize=self.inp["Number_of_days"],
                 doc="The number of days that each time step of typical day corresponds to",
             )
         else:
@@ -145,7 +143,7 @@ class EnergyHubRetrofit:
         if self.temp_res == 3:
             self.m.C_to_T = pe.Param(
                 self.m.Calendar_days,
-                initialize=self.inp.C_to_T,
+                initialize=self.inp["C_to_T"],
                 within=self.m.Days,
                 doc="Parameter to match each calendar day of a full year to a typical day for optimization",
             )
@@ -156,79 +154,79 @@ class EnergyHubRetrofit:
             self.m.Conversion_tech,
             self.m.Energy_carriers,
             default=0,
-            initialize=self.inp.Conv_factor,
+            initialize=self.inp["Conv_factor"],
             doc="The conversion factors of the technologies in the energy hub",
         )
         self.m.Minimum_part_load = pe.Param(
             self.m.Dispatchable_tech,
             default=0,
-            initialize=self.inp.Minimum_part_load,
+            initialize=self.inp["Minimum_part_load"],
             doc="Minimum allowable part-load during the operation of dispatchable technologies",
         )
         self.m.Lifetime_tech = pe.Param(
             self.m.Conversion_tech,
-            initialize=self.inp.Lifetime_tech,
+            initialize=self.inp["Lifetime_tech"],
             doc="Lifetime of energy generation technologies",
         )
         self.m.Storage_tech_coupling = pe.Param(
             self.m.Storage_tech,
             self.m.Energy_carriers,
-            initialize=self.inp.Storage_tech_coupling,
+            initialize=self.inp["Storage_tech_coupling"],
             default=0,
             doc="Par",
         )
         self.m.Storage_max_charge = pe.Param(
             self.m.Storage_tech,
-            initialize=self.inp.Storage_max_charge,
+            initialize=self.inp["Storage_max_charge"],
             doc="Maximum charging rate in % of the total capacity for the storage technologies",
         )
         self.m.Storage_max_discharge = pe.Param(
             self.m.Storage_tech,
-            initialize=self.inp.Storage_max_discharge,
+            initialize=self.inp["Storage_max_discharge"],
             doc="Maximum discharging rate in % of the total capacity for the storage technologies",
         )
         self.m.Storage_standing_losses = pe.Param(
             self.m.Storage_tech,
-            initialize=self.inp.Storage_standing_losses,
+            initialize=self.inp["Storage_standing_losses"],
             doc="Standing losses for the storage technologies",
         )
         self.m.Storage_charging_eff = pe.Param(
             self.m.Storage_tech,
-            initialize=self.inp.Storage_charging_eff,
+            initialize=self.inp["Storage_charging_eff"],
             doc="Efficiency of charging process for the storage technologies",
         )
         self.m.Storage_discharging_eff = pe.Param(
             self.m.Storage_tech,
-            initialize=self.inp.Storage_discharging_eff,
+            initialize=self.inp["Storage_discharging_eff"],
             doc="Efficiency of discharging process for the storage technologies",
         )
         self.m.Storage_max_cap = pe.Param(
             self.m.Storage_tech,
-            initialize=self.inp.Storage_max_cap,
+            initialize=self.inp["Storage_max_cap"],
             doc="Maximum allowable energy storage capacity per technology type",
         )
         self.m.Lifetime_stor = pe.Param(
             self.m.Storage_tech,
-            initialize=self.inp.Lifetime_stor,
+            initialize=self.inp["Lifetime_stor"],
             doc="Lifetime of energy storage technologies",
         )
         self.m.Lifetime_retrofit = pe.Param(
             self.m.Retrofit_scenarios,
-            initialize=self.inp.Lifetime_retrofit,
+            initialize=self.inp["Lifetime_retrofit"],
             doc="Lifetime considered for each retrofit scenario",
         )
         self.m.Network_efficiency = pe.Param(
             self.m.Energy_carriers_dem,
             default=1,
-            initialize=self.inp.Network_efficiency,
+            initialize=self.inp["Network_efficiency"],
             doc="The efficiency of the energy networks used by the energy hub",
         )
         self.m.Network_length = pe.Param(
-            initialize=self.inp.Network_length,
+            initialize=self.inp["Network_length"],
             doc="The length of the thermal network for the energy hub",
         )
         self.m.Network_lifetime = pe.Param(
-            initialize=self.inp.Network_lifetime,
+            initialize=self.inp["Network_lifetime"],
             doc="The lifetime of the thermal network used by the energy hub",
         )
 
@@ -236,47 +234,47 @@ class EnergyHubRetrofit:
         # ---------------
         self.m.Import_prices = pe.Param(
             self.m.Energy_carriers_imp,
-            initialize=self.inp.Import_prices,
+            initialize=self.inp["Import_prices"],
             default=0,
             doc="Prices for importing energy carriers from the grid",
         )
         self.m.Export_prices = pe.Param(
             self.m.Energy_carriers_exp,
-            initialize=self.inp.Export_prices,
+            initialize=self.inp["Export_prices"],
             default=0,
             doc="Feed-in tariffs for exporting energy carriers back to the grid",
         )
         self.m.Linear_conv_costs = pe.Param(
             self.m.Conversion_tech,
-            initialize=self.inp.Linear_conv_costs,
+            initialize=self.inp["Linear_conv_costs"],
             doc="Linear part of the investment cost (per kW or m2) for the generation technologies in the energy hub",
         )
         self.m.Fixed_conv_costs = pe.Param(
             self.m.Conversion_tech,
-            initialize=self.inp.Fixed_conv_costs,
+            initialize=self.inp["Fixed_conv_costs"],
             doc="Fixed part of the investment cost (per kW or m2) for the generation technologies in the energy hub",
         )
         self.m.Linear_stor_costs = pe.Param(
             self.m.Storage_tech,
-            initialize=self.inp.Linear_stor_costs,
+            initialize=self.inp["Linear_stor_costs"],
             doc="Linear part of the investment cost (per kWh) for the storage technologies in the energy hub",
         )
         self.m.Fixed_stor_costs = pe.Param(
             self.m.Storage_tech,
-            initialize=self.inp.Fixed_stor_costs,
+            initialize=self.inp["Fixed_stor_costs"],
             doc="Fixed part of the investment cost (per kWh) for the storage technologies in the energy hub",
         )
         self.m.Network_inv_cost_per_m = pe.Param(
-            initialize=self.inp.Network_inv_cost_per_m,
+            initialize=self.inp["Network_inv_cost_per_m"],
             doc="Investment cost per pipe m of the thermal network of the energy hub",
         )
         self.m.Retrofit_inv_costs = pe.Param(
             self.m.Retrofit_scenarios,
-            initialize=self.inp.Retrofit_inv_costs,
+            initialize=self.inp["Retrofit_inv_costs"],
             doc="Investment cost for each of the considered retrofit scenarios",
         )
         self.m.Discount_rate = pe.Param(
-            initialize=self.inp.Discount_rate,
+            initialize=self.inp["Discount_rate"],
             doc="The interest rate used for the CRF calculation",
         )
 
@@ -331,7 +329,7 @@ class EnergyHubRetrofit:
         # ------------------------
         self.m.Carbon_factors_import = pe.Param(
             self.m.Energy_carriers_imp,
-            initialize=self.inp.Carbon_factors_import,
+            initialize=self.inp["Carbon_factors_import"],
             doc="Energy carrier CO2 emission factors",
         )
         self.m.epsilon = pe.Param(
@@ -343,14 +341,14 @@ class EnergyHubRetrofit:
         # Misc parameters
         # ---------------
         self.m.Roof_area = pe.Param(
-            initialize=self.inp.Roof_area,
+            initialize=self.inp["Roof_area"],
             doc="Available roof area for the installation of solar technologies",
         )
         self.m.P_solar = pe.Param(
             self.m.Retrofit_scenarios,
             self.m.Days,
             self.m.Time_steps,
-            initialize=self.inp.P_solar,
+            initialize=self.inp["P_solar"],
             doc="Incoming solar radiation patterns (kWh/m2) for solar technologies",
         )
         self.m.BigM = pe.Param(default=10 ** 6, doc="Big M: Sufficiently large value")
