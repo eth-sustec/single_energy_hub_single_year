@@ -22,7 +22,7 @@ class EnergyHubRetrofit:
         Inputs to the function:
         -----------------------
             * eh_input_dict: dictionary that holds all the values for the model parameters
-            * temp_res (default = 1): 1: typical days optimization, 2: full horizon optimization (8760 hours), 3: typical days with continous storage state-of-charge
+            * temp_res (default = 1): 1: typical days optimization, 2: full horizon optimization (8760 hours), 3: typical days with continuous storage state-of-charge
             * optim_mode (default = 3): 1: for cost minimization, 2: for carbon minimization, 3: for multi-objective optimization
             * num_of_pareto_points (default = 5): In case optim_mode is set to 3, then this specifies the number of Pareto points
         """
