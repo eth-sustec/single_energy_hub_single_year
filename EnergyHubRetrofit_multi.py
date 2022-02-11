@@ -136,7 +136,7 @@ class EnergyHubRetrofit:
             initialize=self.inp["Demands"],
             doc="Time-varying energy demand patterns for the energy hub",
         )
-        
+
         if self.temp_res == 1 or self.temp_res == 3:
             self.m.Number_of_days = pe.Param(
                 self.m.Retrofit_scenarios,
@@ -385,7 +385,7 @@ class EnergyHubRetrofit:
             self.m.Time_steps,
             initialize=self.inp["Grid_intensity"],
             doc="Electricity CO2 emission factors",
-        )   
+        )
 
         self.m.Elec_import_prices = pe.Param(
             self.m.Retrofit_scenarios,
@@ -401,7 +401,7 @@ class EnergyHubRetrofit:
             self.m.Time_steps,
             initialize=self.inp["Elec_export_prices"],
             doc="Hourly prices of iexported electricity",
-        ) 
+        )
 
         self.m.epsilon = pe.Param(
             initialize=10 ** 8,
@@ -424,7 +424,9 @@ class EnergyHubRetrofit:
         )
         self.m.BigM = pe.Param(default=10 ** 6, doc="Big M: Sufficiently large value")
         self.m.BigM_2 = pe.Param(default=10 ** 4, doc="Big M: Sufficiently large value")
-        self.m.min_install = pe.Param(default=10, doc="Minimum installable value as 20*y_conv")
+        self.m.min_install = pe.Param(
+            default=10, doc="Minimum installable value as 20*y_conv"
+        )
 
         #%% Model variables
         # ===============
@@ -558,7 +560,7 @@ class EnergyHubRetrofit:
         )
         self.m.Total_carbon = pe.Var(
             within=pe.NonNegativeReals,
-            initialize = 0, 
+            initialize=0,
             doc="Total carbon emissions due to the operation of the energy hub",
         )
 
@@ -566,77 +568,75 @@ class EnergyHubRetrofit:
 
         self.m.Embodied_conv = pe.Var(
             self.m.Conversion_tech,
-            initialize = 0,
+            initialize=0,
             within=pe.NonNegativeReals,
             doc="Embodied emissions of conversion technologies",
         )
 
         self.m.Embodied_stor = pe.Var(
             self.m.Storage_tech,
-            initialize = 0,
+            initialize=0,
             within=pe.NonNegativeReals,
             doc="Embodied emissions of storage technologies",
         )
 
         self.m.Embodied_insulation = pe.Var(
-            initialize = 0,
-            doc="Embodied emissions of insulation materials",
+            initialize=0, doc="Embodied emissions of insulation materials",
         )
 
         self.m.Cost_conv = pe.Var(
             self.m.Conversion_tech,
             within=pe.NonNegativeReals,
-            initialize = 0,
+            initialize=0,
             doc="Embodied emissions of conversion technologies",
         )
 
         self.m.Cost_stor = pe.Var(
             self.m.Storage_tech,
             within=pe.NonNegativeReals,
-            initialize = 0,
+            initialize=0,
             doc="Embodied emissions of storage technologies",
         )
 
         self.m.Cost_insulation = pe.Var(
             within=pe.NonNegativeReals,
-            initialize = 0,
+            initialize=0,
             doc="Embodied emissions of insulation materials",
         )
 
         self.m.Elec_import_cost = pe.Var(
             within=pe.NonNegativeReals,
-            initialize = 0,
+            initialize=0,
             doc="The operating cost for the consumption of electricity",
         )
 
         self.m.Others_import_cost = pe.Var(
             within=pe.NonNegativeReals,
-            initialize = 0,
+            initialize=0,
             doc="The operating cost for the consumption of energy carriers that are not electricity",
         )
 
         self.m.Elec_import_emissions = pe.Var(
             within=pe.NonNegativeReals,
-            initialize = 0,
+            initialize=0,
             doc="The operational emissions for the consumption of electricity",
         )
 
         self.m.Others_import_emissions = pe.Var(
             within=pe.NonNegativeReals,
-            initialize = 0,
+            initialize=0,
             doc="The operational emissions for the consumption of energy carriers that are not electricity",
         )
 
         self.m.Elec_export_emissions = pe.Var(
             within=pe.NonNegativeReals,
-            initialize = 0,
+            initialize=0,
             doc="The operational emissions for the export of electricity, accounted as negative in total balance",
         )
 
-        
         self.m.Elec_export_cost = pe.Var(
             within=pe.NonNegativeReals,
-            initialize = 0,
+            initialize=0,
             doc="The profit for the export of electricity",
         )
 
@@ -681,11 +681,8 @@ class EnergyHubRetrofit:
         )
         # Added variables to avoid simultaneous charging and discharging
         # ----------------------
-        
-        self.m.er = pe.Param(
-            initialize=1E-6,
-            doc="",
-        )
+
+        self.m.er = pe.Param(initialize=1e-6, doc="",)
         self.m.QIin = pe.Var(
             self.m.Storage_tech,
             self.m.Days,
@@ -699,16 +696,16 @@ class EnergyHubRetrofit:
             self.m.Time_steps,
             within=pe.Binary,
             doc="",
-        )        
+        )
 
         self.m.z_scd = pe.Var(
             self.m.Storage_tech,
             self.m.Days,
             self.m.Time_steps,
-            initialize = 0,
+            initialize=0,
             within=pe.Binary,
             doc="",
-        )  
+        )
 
         #%% Model constraints
         # =================
@@ -723,11 +720,12 @@ class EnergyHubRetrofit:
                 for conv_tech in conv_tech_tmp  # without PV, which is added separately as self_consumption
             ) + sum(
                 m.Storage_tech_coupling[stor_tech, ec]
-                * (m.Qout[stor_tech, d, t]- m.Qin[stor_tech, d, t])
+                * (m.Qout[stor_tech, d, t] - m.Qin[stor_tech, d, t])
                 for stor_tech in m.Storage_tech
             ) + sum(
                 m.Solar_self_consumption[sol, d, t]
-                for sol in m.PV_tech if m.Conv_factor[sol, ec] > 0
+                for sol in m.PV_tech
+                if m.Conv_factor[sol, ec] > 0
             ) == sum(
                 m.y_retrofit[ret] * m.Demands[ec, ret, d, t]
                 for ret in m.Retrofit_scenarios
@@ -749,7 +747,7 @@ class EnergyHubRetrofit:
         def Capacity_constraint_rule(m, disp, ec, d, t):
             if m.Conv_factor[disp, ec] > 0:
                 return (
-                 m.P_conv[disp, d, t] * m.Conv_factor[disp, ec] <= m.Conv_cap[disp]
+                    m.P_conv[disp, d, t] * m.Conv_factor[disp, ec] <= m.Conv_cap[disp]
                 )
             else:
                 return pe.Constraint.Skip
@@ -764,41 +762,43 @@ class EnergyHubRetrofit:
         )
 
         def Min_installable_capacity_rule(m, conv_tech):
-                return m.Conv_cap[conv_tech] >= m.min_install*m.y_conv[conv_tech]
+            return m.Conv_cap[conv_tech] >= m.min_install * m.y_conv[conv_tech]
 
         self.m.Min_installable_capacity = pe.Constraint(
             self.m.Conversion_tech,
             rule=Min_installable_capacity_rule,
             doc="Minimum capacity that needs to be installed if a conversion technology is used",
-        ) 
+        )
 
         def Min_installable_capacity_rule_2(m, stor_tech):
-                return m.Storage_cap[stor_tech] >= m.min_install*m.y_stor[stor_tech]
+            return m.Storage_cap[stor_tech] >= m.min_install * m.y_stor[stor_tech]
 
         self.m.Min_installable_capacity_2 = pe.Constraint(
             self.m.Storage_tech,
             rule=Min_installable_capacity_rule_2,
             doc="Minimum capacity that needs to be installed if a storage technology is used",
-        ) 
-
+        )
 
         def Solar_input_rule_initial(m, sol, d, t):
-        # return m.P_conv[sol, d, t] == m.P_solar[ret, d, t] * m.Conv_cap[sol] * y_retrofit[ret]
+            # return m.P_conv[sol, d, t] == m.P_solar[ret, d, t] * m.Conv_cap[sol] * y_retrofit[ret]
             return m.P_conv[sol, d, t] == sum(
-            m.P_solar[ret, d, t] * m.z3[sol, ret] for ret in m.Retrofit_scenarios
+                m.P_solar[ret, d, t] * m.z3[sol, ret] for ret in m.Retrofit_scenarios
             )
-                                
+
         self.m.Solar_input_inital = pe.Constraint(
-        self.m.Solar_tech,
-        self.m.Days,
-        self.m.Time_steps,
-        rule=Solar_input_rule_initial,
-        doc="Constraint connecting the solar radiation per m2 with the area of solar PV technologies",
-         )
+            self.m.Solar_tech,
+            self.m.Days,
+            self.m.Time_steps,
+            rule=Solar_input_rule_initial,
+            doc="Constraint connecting the solar radiation per m2 with the area of solar PV technologies",
+        )
 
         def Solar_self_consumption_rule(m, ec_exp, d, t):
             # solar_tmp = [tech for tech in m.Conversion_tech if tech == "PV"]
-            return m.P_export["Elec", d, t] == m.P_conv["PV", d, t] - m.Solar_self_consumption["PV", d, t]
+            return (
+                m.P_export["Elec", d, t]
+                == m.P_conv["PV", d, t] - m.Solar_self_consumption["PV", d, t]
+            )
 
         self.m.Solar_input = pe.Constraint(
             self.m.Energy_carriers_exp,
@@ -807,7 +807,6 @@ class EnergyHubRetrofit:
             rule=Solar_self_consumption_rule,
             doc="Constraint describing that solar generated electricity can be exported",
         )
-
 
         def Minimum_part_load_constr_rule1(m, disp, ec, d, t):
             return (
@@ -865,12 +864,11 @@ class EnergyHubRetrofit:
             doc="Non violation of the maximum roof area for solar installations",
         )
 
-
         # CO2 certificates constraint
         # -------------------
         def Number_CO2_certificates_rule(m):
             return m.Number_CO2_certificates <= 150
-            
+
         self.m.Number_CO2_certificates_rule = pe.Constraint(
             rule=Number_CO2_certificates_rule,
             doc="Definition of a limit to the number of purchasable CO2 certificates",
@@ -1070,108 +1068,63 @@ class EnergyHubRetrofit:
         # Added constraints to avoid simultaneous charging and discharging (scd)
         # --------------------
         def scd1_rule(m, stor_tech, d, t):
-            return (
-                m.QIin[stor_tech,d, t] >= m.Qin[stor_tech, d, t]/100
-            )
+            return m.QIin[stor_tech, d, t] >= m.Qin[stor_tech, d, t] / 100
 
         self.m.scd1_constr = pe.Constraint(
-            self.m.Storage_tech,
-            self.m.Days,
-            self.m.Time_steps,
-            rule=scd1_rule,
-            doc="",
+            self.m.Storage_tech, self.m.Days, self.m.Time_steps, rule=scd1_rule, doc="",
         )
+
         def scd2_rule(m, stor_tech, d, t):
-            return (
-                m.QIout[stor_tech,d, t] >= m.Qout[stor_tech, d, t]/100
-            )
+            return m.QIout[stor_tech, d, t] >= m.Qout[stor_tech, d, t] / 100
 
         self.m.scd2_constr = pe.Constraint(
-            self.m.Storage_tech,
-            self.m.Days,
-            self.m.Time_steps,
-            rule=scd2_rule,
-            doc="",
+            self.m.Storage_tech, self.m.Days, self.m.Time_steps, rule=scd2_rule, doc="",
         )
 
         def scd3_rule(m, stor_tech, d, t):
-            return (
-                m.QIin[stor_tech,d, t] <= 1 - m.er + m.Qin[stor_tech, d, t]/100
-            )
+            return m.QIin[stor_tech, d, t] <= 1 - m.er + m.Qin[stor_tech, d, t] / 100
 
         self.m.scd3_constr = pe.Constraint(
-            self.m.Storage_tech,
-            self.m.Days,
-            self.m.Time_steps,
-            rule=scd3_rule,
-            doc="",
+            self.m.Storage_tech, self.m.Days, self.m.Time_steps, rule=scd3_rule, doc="",
         )
+
         def scd4_rule(m, stor_tech, d, t):
-            return (
-                m.QIout[stor_tech,d, t] <= 1 - m.er + m.Qout[stor_tech, d, t]/100
-            )
+            return m.QIout[stor_tech, d, t] <= 1 - m.er + m.Qout[stor_tech, d, t] / 100
 
         self.m.scd4_constr = pe.Constraint(
-            self.m.Storage_tech,
-            self.m.Days,
-            self.m.Time_steps,
-            rule=scd4_rule,
-            doc="",
+            self.m.Storage_tech, self.m.Days, self.m.Time_steps, rule=scd4_rule, doc="",
         )
 
-
         def scd5_rule(m, stor_tech, d, t):
-            return (
-                m.z_scd[stor_tech, d, t] >= 1-m.QIin[stor_tech, d, t]
-            )
+            return m.z_scd[stor_tech, d, t] >= 1 - m.QIin[stor_tech, d, t]
 
         self.m.scd5_constr = pe.Constraint(
-            self.m.Storage_tech,
-            self.m.Days,
-            self.m.Time_steps,
-            rule=scd5_rule,
-            doc="",
+            self.m.Storage_tech, self.m.Days, self.m.Time_steps, rule=scd5_rule, doc="",
         )
 
         def scd6_rule(m, stor_tech, d, t):
-            return (
-                m.z_scd[stor_tech, d, t] >= 1-m.QIout[stor_tech, d, t]
-            )
+            return m.z_scd[stor_tech, d, t] >= 1 - m.QIout[stor_tech, d, t]
 
         self.m.scd6_constr = pe.Constraint(
-            self.m.Storage_tech,
-            self.m.Days,
-            self.m.Time_steps,
-            rule=scd6_rule,
-            doc="",
+            self.m.Storage_tech, self.m.Days, self.m.Time_steps, rule=scd6_rule, doc="",
         )
 
         def scd7_rule(m, stor_tech, d, t):
             return (
-                m.z_scd[stor_tech, d, t] <= 2-m.QIin[stor_tech, d, t]-m.QIout[stor_tech, d, t]
+                m.z_scd[stor_tech, d, t]
+                <= 2 - m.QIin[stor_tech, d, t] - m.QIout[stor_tech, d, t]
             )
 
         self.m.scd7_constr = pe.Constraint(
-            self.m.Storage_tech,
-            self.m.Days,
-            self.m.Time_steps,
-            rule=scd7_rule,
-            doc="",
+            self.m.Storage_tech, self.m.Days, self.m.Time_steps, rule=scd7_rule, doc="",
         )
 
         def scd8_rule(m, stor_tech, d, t):
-            return (
-                m.z_scd[stor_tech, d, t] == 1
-            )
+            return m.z_scd[stor_tech, d, t] == 1
 
         self.m.scd8_constr = pe.Constraint(
-            self.m.Storage_tech,
-            self.m.Days,
-            self.m.Time_steps,
-            rule=scd8_rule,
-            doc="",
+            self.m.Storage_tech, self.m.Days, self.m.Time_steps, rule=scd8_rule, doc="",
         )
-
 
         # Retrofit constraints
         # --------------------
@@ -1189,10 +1142,10 @@ class EnergyHubRetrofit:
         def Embodied_insulation_rule(m):
             return m.Embodied_insulation == sum(
                 m.Embodied_emissions_insulation[ret]
-                *m.y_retrofit[ret]
-                /m.Lifetime_retrofit[ret]
+                * m.y_retrofit[ret]
+                / m.Lifetime_retrofit[ret]
                 for ret in m.Retrofit_scenarios
-                )
+            )
 
         self.m.Embodied_insulation_constr = pe.Constraint(
             rule=Embodied_insulation_rule,
@@ -1201,20 +1154,22 @@ class EnergyHubRetrofit:
 
         def Cost_insulation_rule(m):
             return m.Cost_insulation == sum(
-                m.y_retrofit[ret]
-                *m.Retrofit_inv_costs[ret]
-                *m.CRF_retrofit[ret]
+                m.y_retrofit[ret] * m.Retrofit_inv_costs[ret] * m.CRF_retrofit[ret]
                 for ret in m.Retrofit_scenarios
-                )
-                
+            )
 
         self.m.Cost_insulation_constr = pe.Constraint(
-            rule=Cost_insulation_rule,
-            doc="Calculation of cost of insulation material",
+            rule=Cost_insulation_rule, doc="Calculation of cost of insulation material",
         )
 
         def Embodied_conv_rule(m, conv_tech):
-            return m.Embodied_conv[conv_tech] == m.y_conv[conv_tech]*m.Embodied_emissions_conversion_tech_fixed[conv_tech] + m.Embodied_emissions_conversion_tech_linear[conv_tech]* m.Conv_cap[conv_tech]
+            return (
+                m.Embodied_conv[conv_tech]
+                == m.y_conv[conv_tech]
+                * m.Embodied_emissions_conversion_tech_fixed[conv_tech]
+                + m.Embodied_emissions_conversion_tech_linear[conv_tech]
+                * m.Conv_cap[conv_tech]
+            )
 
         self.m.Embodied_conv_constr = pe.Constraint(
             self.m.Conversion_tech,
@@ -1223,7 +1178,13 @@ class EnergyHubRetrofit:
         )
 
         def Embodied_stor_rule(m, stor_tech):
-            return m.Embodied_stor[stor_tech] == m.y_stor[stor_tech]*m.Embodied_emissions_storage_tech_fixed[stor_tech] + m.Embodied_emissions_storage_tech_linear[stor_tech]* m.Storage_cap[stor_tech]
+            return (
+                m.Embodied_stor[stor_tech]
+                == m.y_stor[stor_tech]
+                * m.Embodied_emissions_storage_tech_fixed[stor_tech]
+                + m.Embodied_emissions_storage_tech_linear[stor_tech]
+                * m.Storage_cap[stor_tech]
+            )
 
         self.m.Embodied_stor_constr = pe.Constraint(
             self.m.Storage_tech,
@@ -1232,8 +1193,14 @@ class EnergyHubRetrofit:
         )
 
         def Cost_conv_rule(m, conv_tech):
-            return m.Cost_conv[conv_tech] == (m.Fixed_conv_costs[conv_tech] * m.y_conv[conv_tech] + m.Linear_conv_costs[conv_tech] * m.Conv_cap[conv_tech])* m.CRF_tech[conv_tech]
-
+            return (
+                m.Cost_conv[conv_tech]
+                == (
+                    m.Fixed_conv_costs[conv_tech] * m.y_conv[conv_tech]
+                    + m.Linear_conv_costs[conv_tech] * m.Conv_cap[conv_tech]
+                )
+                * m.CRF_tech[conv_tech]
+            )
 
         self.m.Cost_conv_constr = pe.Constraint(
             self.m.Conversion_tech,
@@ -1242,14 +1209,20 @@ class EnergyHubRetrofit:
         )
 
         def Cost_stor_rule(m, stor_tech):
-            return m.Cost_stor[stor_tech] == (m.Fixed_stor_costs[stor_tech] * m.y_stor[stor_tech] + m.Linear_stor_costs[stor_tech] * m.Storage_cap[stor_tech])* m.CRF_stor[stor_tech]
+            return (
+                m.Cost_stor[stor_tech]
+                == (
+                    m.Fixed_stor_costs[stor_tech] * m.y_stor[stor_tech]
+                    + m.Linear_stor_costs[stor_tech] * m.Storage_cap[stor_tech]
+                )
+                * m.CRF_stor[stor_tech]
+            )
 
         self.m.Cost_stor_constr = pe.Constraint(
             self.m.Storage_tech,
             rule=Cost_stor_rule,
             doc="Calculation of cost of storage technologies",
         )
-
 
         def Elec_import_cost_rule(m):
             return m.Elec_import_cost == sum(
@@ -1261,8 +1234,8 @@ class EnergyHubRetrofit:
                 for ret in m.Retrofit_scenarios
                 for d in m.Days
                 for t in m.Time_steps
-            ) 
-            
+            )
+
         def Others_import_cost_rule(m):
             return m.Others_import_cost == sum(
                 m.Import_prices[ec_imp]
@@ -1294,7 +1267,7 @@ class EnergyHubRetrofit:
                 for ret in m.Retrofit_scenarios
                 for d in m.Days
                 for t in m.Time_steps
-            ) 
+            )
 
         self.m.Elec_export_cost_cstr = pe.Constraint(
             rule=Elec_export_cost_rule,
@@ -1306,13 +1279,13 @@ class EnergyHubRetrofit:
                 m.Grid_intensity[ret, d, t]
                 * m.Number_of_days[ret, d]
                 * m.z1[ec_imp, ret, d, t]
-				for ec_imp in m.Energy_carriers_imp
+                for ec_imp in m.Energy_carriers_imp
                 if ec_imp == "Elec"
                 for ret in m.Retrofit_scenarios
                 for d in m.Days
                 for t in m.Time_steps
-                )
-            
+            )
+
         self.m.Elec_import_emissions_cstr = pe.Constraint(
             rule=Elec_import_emissions_rule,
             doc="Definition of the electricity operating emissions",
@@ -1328,8 +1301,8 @@ class EnergyHubRetrofit:
                 if ec_imp != "Elec"
                 for ret in m.Retrofit_scenarios
                 for d in m.Days
-                for t in m.Time_steps    
-                ) 
+                for t in m.Time_steps
+            )
 
         self.m.Others_import_emissions_cstr = pe.Constraint(
             rule=Others_import_emissions_rule,
@@ -1341,17 +1314,16 @@ class EnergyHubRetrofit:
                 m.Grid_intensity[ret, d, t]
                 * m.Number_of_days[ret, d]
                 * m.z2[ec_exp, ret, d, t]
-				for ec_exp in m.Energy_carriers_exp
+                for ec_exp in m.Energy_carriers_exp
                 for ret in m.Retrofit_scenarios
                 for d in m.Days
                 for t in m.Time_steps
-				) 
+            )
 
         self.m.Elec_export_emissions_cstr = pe.Constraint(
             rule=Elec_export_emissions_rule,
             doc="Definition of the electricity export emissiosn",
         )
-
 
         # Objective function definitions
         # ------------------------------
@@ -1384,7 +1356,7 @@ class EnergyHubRetrofit:
         )
 
         def Export_profit_rule(m):
-            return m.Export_profit ==  sum(
+            return m.Export_profit == sum(
                 # m.Export_prices[ec_imp] * m.P_export[ec_imp, d, t] * m.Number_of_days[ret, d] * m.y_retrofit[ret]
                 m.Elec_export_prices[ret, d, t]
                 * m.Number_of_days[ret, d]
@@ -1393,7 +1365,7 @@ class EnergyHubRetrofit:
                 for ret in m.Retrofit_scenarios
                 for d in m.Days
                 for t in m.Time_steps
-            ) 
+            )
 
         self.m.Export_profit_def = pe.Constraint(
             rule=Export_profit_rule,
@@ -1418,7 +1390,7 @@ class EnergyHubRetrofit:
             ) + m.Network_inv_cost_per_m * m.Network_length * m.CRF_network + sum(
                 m.y_retrofit[ret] * m.Retrofit_inv_costs[ret] * m.CRF_retrofit[ret]
                 for ret in m.Retrofit_scenarios
-            )         
+            )
 
         self.m.Investment_cost_def = pe.Constraint(
             rule=Investment_cost_rule,
@@ -1444,12 +1416,12 @@ class EnergyHubRetrofit:
                 m.Grid_intensity[ret, d, t]
                 * m.Number_of_days[ret, d]
                 * m.z1[ec_imp, ret, d, t]
-				for ec_imp in m.Energy_carriers_imp
+                for ec_imp in m.Energy_carriers_imp
                 if ec_imp == "Elec"
                 for ret in m.Retrofit_scenarios
                 for d in m.Days
                 for t in m.Time_steps
-                ) + sum(
+            ) + sum(
                 # m.Carbon_factors_import[ec_imp] * m.P_import[ec_imp, d, t] * m.Number_of_days[ret, d] * m.y_retrofit[ret]
                 m.Carbon_factors_import[ec_imp]
                 * m.Number_of_days[ret, d]
@@ -1458,37 +1430,44 @@ class EnergyHubRetrofit:
                 if ec_imp != "Elec"
                 for ret in m.Retrofit_scenarios
                 for d in m.Days
-                for t in m.Time_steps    
-                ) - sum(
+                for t in m.Time_steps
+            ) - sum(
                 # m.Carbon_factors_import[ec_imp] * m.P_export[ec_exp, d, t] * m.Number_of_days[ret, d] * m.y_retrofit[ret]
                 m.Grid_intensity[ret, d, t]
                 * m.Number_of_days[ret, d]
                 * m.z2[ec_exp, ret, d, t]
-				for ec_exp in m.Energy_carriers_exp
+                for ec_exp in m.Energy_carriers_exp
                 for ret in m.Retrofit_scenarios
                 for d in m.Days
                 for t in m.Time_steps
-				) - m.Number_CO2_certificates * m.Carbon_benefit_CO2_certificates + sum(
+            ) - m.Number_CO2_certificates * m.Carbon_benefit_CO2_certificates + sum(
                 m.Embodied_emissions_insulation[ret]
                 / m.Lifetime_retrofit[ret]
-                * m.y_retrofit[ret] for ret in m.Retrofit_scenarios
-                ) + sum(
-                (m.Embodied_emissions_conversion_tech_fixed[conv_tech]
-                * m.y_conv[conv_tech]
-                + m.Embodied_emissions_conversion_tech_linear[conv_tech]
-                * m.Conv_cap[conv_tech])
-                /m.Lifetime_tech[conv_tech]  for conv_tech in m.Conversion_tech
-                )+ sum(
-                (m.Embodied_emissions_storage_tech_fixed[stor_tech]
-                * m.y_stor[stor_tech]
-                + m.Embodied_emissions_storage_tech_linear[stor_tech]
-                * m.Storage_cap[stor_tech])
-                /m.Lifetime_stor[stor_tech] for stor_tech in m.Storage_tech
+                * m.y_retrofit[ret]
+                for ret in m.Retrofit_scenarios
+            ) + sum(
+                (
+                    m.Embodied_emissions_conversion_tech_fixed[conv_tech]
+                    * m.y_conv[conv_tech]
+                    + m.Embodied_emissions_conversion_tech_linear[conv_tech]
+                    * m.Conv_cap[conv_tech]
                 )
+                / m.Lifetime_tech[conv_tech]
+                for conv_tech in m.Conversion_tech
+            ) + sum(
+                (
+                    m.Embodied_emissions_storage_tech_fixed[stor_tech]
+                    * m.y_stor[stor_tech]
+                    + m.Embodied_emissions_storage_tech_linear[stor_tech]
+                    * m.Storage_cap[stor_tech]
+                )
+                / m.Lifetime_stor[stor_tech]
+                for stor_tech in m.Storage_tech
+            )
 
         self.m.Total_carbon_def = pe.Constraint(
-           rule=Total_carbon_rule,
-           doc="Definition of the total carbon emissions model objective function",
+            rule=Total_carbon_rule,
+            doc="Definition of the total carbon emissions model objective function",
         )
 
         # Carbon constraint
@@ -1745,7 +1724,6 @@ class EnergyHubRetrofit:
             doc="Auxiliary constraint for variable z5",
         )
 
-
         #%% Objective functions
         # ===================
 
@@ -1817,11 +1795,9 @@ class EnergyHubRetrofit:
             pkl.dump(all_vars, file)
             file.close()
 
-
-
             of.write_all_vars_to_excel(
-                all_vars[0], results_folder + "\cost_min_scenario_")
-            
+                all_vars[0], results_folder + "\cost_min_scenario_"
+            )
 
         elif self.optim_mode == 2:
 
@@ -1977,4 +1953,3 @@ class EnergyHubRetrofit:
 
 if __name__ == "__main__":
     pass
-

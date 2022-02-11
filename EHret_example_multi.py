@@ -21,7 +21,14 @@ ehr_inp["Time_steps"] = list(range(1, Number_of_time_steps + 1))
 ehr_inp["Solar_tech"] = ["PV", "ST"]
 ehr_inp["PV_tech"] = ["PV"]
 ehr_inp["ST_tech"] = ["ST"]
-ehr_inp["Dispatchable_tech"] = ["ASHP", "GSHP", "Gas_Boiler", "Oil_Boiler", "Bio_Boiler", "CHP"]
+ehr_inp["Dispatchable_tech"] = [
+    "ASHP",
+    "GSHP",
+    "Gas_Boiler",
+    "Oil_Boiler",
+    "Bio_Boiler",
+    "CHP",
+]
 ehr_inp["Conversion_tech"] = ehr_inp["Dispatchable_tech"] + ehr_inp["Solar_tech"]
 ehr_inp["Storage_tech"] = ["Thermal_storage_tank", "Battery"]
 ehr_inp["Energy_carriers"] = ["Heat", "Elec", "NatGas", "Oil", "Biomass"]
@@ -29,7 +36,18 @@ ehr_inp["Energy_carriers_imp"] = ["Elec", "NatGas", "Oil", "Biomass"]
 ehr_inp["Energy_carriers_exp"] = ["Elec"]
 ehr_inp["Energy_carriers_dem"] = ["Heat", "Elec"]
 
-ehr_inp["Retrofit_scenarios"] = ["Hempcrete01", "Hempcrete025" ,"EPS01" ,"EPS025","Rockwool01" ,"Rockwool025" ,"Straw01" ,"Straw025" ,"Woodfibre01" ,"Woodfibre025"]
+ehr_inp["Retrofit_scenarios"] = [
+    "Hempcrete01",
+    "Hempcrete025",
+    "EPS01",
+    "EPS025",
+    "Rockwool01",
+    "Rockwool025",
+    "Straw01",
+    "Straw025",
+    "Woodfibre01",
+    "Woodfibre025",
+]
 
 # Defining input values for model parameters
 # ==========================================
@@ -47,7 +65,7 @@ Number_of_days = pd.read_excel(
     header=0,
     sheet_name="Number_of_days",
 )  # Read from some Excel/.csv file
-ehr_inp["Number_of_days"] = Number_of_days.stack().reorder_levels([1,0]).to_dict()
+ehr_inp["Number_of_days"] = Number_of_days.stack().reorder_levels([1, 0]).to_dict()
 
 C_to_T = pd.read_excel(
     "Time_series_inputs_retrofit.xlsx",
@@ -55,7 +73,7 @@ C_to_T = pd.read_excel(
     header=0,
     sheet_name="C_to_T_matching",
 )  # Read from some Excel/.csv file
-ehr_inp["C_to_T"] = C_to_T.stack().reorder_levels([1,0]).to_dict()
+ehr_inp["C_to_T"] = C_to_T.stack().reorder_levels([1, 0]).to_dict()
 
 
 P_solar = pd.read_excel(
@@ -64,15 +82,12 @@ P_solar = pd.read_excel(
     header=[0],
     sheet_name="Solar",
 )  # Read from some Excel/.csv file
-ehr_inp["P_solar"] = P_solar.stack().reorder_levels([2,0,1]).to_dict()
+ehr_inp["P_solar"] = P_solar.stack().reorder_levels([2, 0, 1]).to_dict()
 
 Grid_intensity = pd.read_excel(
-    "Time_series_inputs_retrofit.xlsx",
-    index_col=[0, 1],
-    header=[0],
-    sheet_name="Grid",
+    "Time_series_inputs_retrofit.xlsx", index_col=[0, 1], header=[0], sheet_name="Grid",
 )  # Read from some Excel/.csv file
-ehr_inp["Grid_intensity"] = Grid_intensity.stack().reorder_levels([2,0,1]).to_dict()
+ehr_inp["Grid_intensity"] = Grid_intensity.stack().reorder_levels([2, 0, 1]).to_dict()
 
 
 Elec_import_prices = pd.read_excel(
@@ -81,7 +96,9 @@ Elec_import_prices = pd.read_excel(
     header=[0],
     sheet_name="Import_elec",
 )  # Read from some Excel/.csv file
-ehr_inp["Elec_import_prices"] = Elec_import_prices.stack().reorder_levels([2,0,1]).to_dict()
+ehr_inp["Elec_import_prices"] = (
+    Elec_import_prices.stack().reorder_levels([2, 0, 1]).to_dict()
+)
 
 Elec_export_prices = pd.read_excel(
     "Time_series_inputs_retrofit.xlsx",
@@ -89,14 +106,16 @@ Elec_export_prices = pd.read_excel(
     header=[0],
     sheet_name="Export_elec",
 )  # Read from some Excel/.csv file
-ehr_inp["Elec_export_prices"] = Elec_export_prices.stack().reorder_levels([2,0,1]).to_dict()
+ehr_inp["Elec_export_prices"] = (
+    Elec_export_prices.stack().reorder_levels([2, 0, 1]).to_dict()
+)
 
 ehr_inp["Discount_rate"] = 0.080
 
-ehr_inp["Network_efficiency"] = {"Heat": 1.00, "Elec": 1.00}        
-ehr_inp["Network_length"] = 0                                     # set to 0 as this is not considered
-ehr_inp["Network_lifetime"] = 10                                  
-ehr_inp["Network_inv_cost_per_m"] = 0                             # set to 0 as this is not considered
+ehr_inp["Network_efficiency"] = {"Heat": 1.00, "Elec": 1.00}
+ehr_inp["Network_length"] = 0  # set to 0 as this is not considered
+ehr_inp["Network_lifetime"] = 10
+ehr_inp["Network_inv_cost_per_m"] = 0  # set to 0 as this is not considered
 
 ehr_inp["Roof_area"] = 120
 
@@ -113,15 +132,19 @@ gen_tech = {
     "GSHP": [2450, 49130, 20, 72, 1806],
     "Gas_Boiler": [620, 27600, 20, 51, 0],
     "Oil_Boiler": [570, 26600, 20, 51, 0],
-    "Bio_Boiler": [320, 55885, 20, 51, 0],,
+    "Bio_Boiler": [320, 55885, 20, 51, 0],
     "CHP": [790, 63280, 20, 100, 3750],
 }
 
 ehr_inp["Linear_conv_costs"] = {key: gen_tech[key][0] for key in gen_tech.keys()}
 ehr_inp["Fixed_conv_costs"] = {key: gen_tech[key][1] for key in gen_tech.keys()}
 ehr_inp["Lifetime_tech"] = {key: gen_tech[key][2] for key in gen_tech.keys()}
-ehr_inp["Embodied_emissions_conversion_tech_linear"] = {key: gen_tech[key][3] for key in gen_tech.keys()}
-ehr_inp["Embodied_emissions_conversion_tech_fixed"] = {key: gen_tech[key][4] for key in gen_tech.keys()}
+ehr_inp["Embodied_emissions_conversion_tech_linear"] = {
+    key: gen_tech[key][3] for key in gen_tech.keys()
+}
+ehr_inp["Embodied_emissions_conversion_tech_fixed"] = {
+    key: gen_tech[key][4] for key in gen_tech.keys()
+}
 
 
 ehr_inp["Import_prices"] = {"NatGas": 0.120, "Oil": 0.101, "Biomass": 0.100}
@@ -167,13 +190,21 @@ ehr_inp["Linear_stor_costs"] = {key: stor_tech[key][0] for key in stor_tech.keys
 ehr_inp["Fixed_stor_costs"] = {key: stor_tech[key][1] for key in stor_tech.keys()}
 ehr_inp["Storage_max_charge"] = {key: stor_tech[key][2] for key in stor_tech.keys()}
 ehr_inp["Storage_max_discharge"] = {key: stor_tech[key][3] for key in stor_tech.keys()}
-ehr_inp["Storage_standing_losses"] = {key: stor_tech[key][4] for key in stor_tech.keys()}
+ehr_inp["Storage_standing_losses"] = {
+    key: stor_tech[key][4] for key in stor_tech.keys()
+}
 ehr_inp["Storage_charging_eff"] = {key: stor_tech[key][5] for key in stor_tech.keys()}
-ehr_inp["Storage_discharging_eff"] = {key: stor_tech[key][6] for key in stor_tech.keys()}
+ehr_inp["Storage_discharging_eff"] = {
+    key: stor_tech[key][6] for key in stor_tech.keys()
+}
 ehr_inp["Storage_max_cap"] = {key: stor_tech[key][7] for key in stor_tech.keys()}
 ehr_inp["Lifetime_stor"] = {key: stor_tech[key][8] for key in stor_tech.keys()}
-ehr_inp["Embodied_emissions_storage_tech_linear"] = {key: stor_tech[key][9] for key in stor_tech.keys()}
-ehr_inp["Embodied_emissions_storage_tech_fixed"] = {key: stor_tech[key][10] for key in stor_tech.keys()}
+ehr_inp["Embodied_emissions_storage_tech_linear"] = {
+    key: stor_tech[key][9] for key in stor_tech.keys()
+}
+ehr_inp["Embodied_emissions_storage_tech_fixed"] = {
+    key: stor_tech[key][10] for key in stor_tech.keys()
+}
 
 ehr_inp["Storage_tech_coupling"] = {
     ("Thermal_storage_tank", "Heat"): 1.0,
@@ -182,21 +213,47 @@ ehr_inp["Storage_tech_coupling"] = {
 
 # Retrofits
 # ---------
-ehr_inp["Retrofit_inv_costs"] = {"Hempcrete01":308731.79124000005,"Hempcrete025":129547.87473000001,"EPS01":130964.73248199999,"EPS025":69138.17995399999,"Rockwool01":140620.89826400002,"Rockwool025":63749.453432,"Straw01": 128594.24677900002,"Straw025":128493.87710000001,"Woodfibre01":292696.5145,"Woodfibre025":138403.17383499997} # Cost of insulation
-ehr_inp["Embodied_emissions_insulation"] = {"Hempcrete01":4149.62085 ,"Hempcrete025":1583.71485,"EPS01":81501.810168,"EPS025":31092.754008,"Rockwool01":17805.892962,"Rockwool025":6798.1562220000005,"Straw01":-93999.811553,"Straw025":-35888.638696999995,"Woodfibre01":-78037.393789000013,"Woodfibre025": -29758.772725000003} # Embodied emissions of insulation
-ehr_inp["Lifetime_retrofit"] = {"Hempcrete01":40,"Hempcrete025":40,"EPS01":40,"EPS025":40,"Rockwool01":40,"Rockwool025":40,"Straw01":40,"Straw025":40,"Woodfibre01":40,"Woodfibre025":40} # Lifetime of the retrofit
+ehr_inp["Retrofit_inv_costs"] = {
+    "Hempcrete01": 308731.79124000005,
+    "Hempcrete025": 129547.87473000001,
+    "EPS01": 130964.73248199999,
+    "EPS025": 69138.17995399999,
+    "Rockwool01": 140620.89826400002,
+    "Rockwool025": 63749.453432,
+    "Straw01": 128594.24677900002,
+    "Straw025": 128493.87710000001,
+    "Woodfibre01": 292696.5145,
+    "Woodfibre025": 138403.17383499997,
+}  # Cost of insulation
+ehr_inp["Embodied_emissions_insulation"] = {
+    "Hempcrete01": 4149.62085,
+    "Hempcrete025": 1583.71485,
+    "EPS01": 81501.810168,
+    "EPS025": 31092.754008,
+    "Rockwool01": 17805.892962,
+    "Rockwool025": 6798.1562220000005,
+    "Straw01": -93999.811553,
+    "Straw025": -35888.638696999995,
+    "Woodfibre01": -78037.393789000013,
+    "Woodfibre025": -29758.772725000003,
+}  # Embodied emissions of insulation
+ehr_inp["Lifetime_retrofit"] = {
+    "Hempcrete01": 40,
+    "Hempcrete025": 40,
+    "EPS01": 40,
+    "EPS025": 40,
+    "Rockwool01": 40,
+    "Rockwool025": 40,
+    "Straw01": 40,
+    "Straw025": 40,
+    "Woodfibre01": 40,
+    "Woodfibre025": 40,
+}  # Lifetime of the retrofit
 
 #%% Create and solve the model
 # ============================
 import EnergyHubRetrofit_final_multi as ehr
 
-mod = ehr.EnergyHubRetrofit(ehr_inp, 1, 3, 5) # Initialize the model
+mod = ehr.EnergyHubRetrofit(ehr_inp, 1, 3, 5)  # Initialize the model
 mod.create_model()  # Create the model
-mod.solve() # Solve the model
-
-
-
-
-
-
-
+mod.solve()  # Solve the model
