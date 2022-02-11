@@ -4,13 +4,12 @@ Single energy hub - single stage model for the optimal design of a multi-energy 
 Author: Georgios Mavromatidis (ETH Zurich, gmavroma@ethz.ch)
 """
 
-import pyomo
-from pyomo.core.base.initializer import Initializer
-import pyomo.opt
-import pyomo.environ as pe
-
 # import pandas as pd
 import numpy as np
+import pyomo
+import pyomo.environ as pe
+import pyomo.opt
+from pyomo.core.base.initializer import Initializer
 
 
 class EnergyHubRetrofit:
@@ -1754,13 +1753,13 @@ class EnergyHubRetrofit:
                 * oper: Contains the generation, export and storage energy flows for all time steps considered. It is a single dataframe when optim_mode is 1 or 2 (single-objective) and a list of dataframes for each Pareto point when optim_mode is set to 3 (multi-objective).
         """
 
-        import Output_functions as of
         import pickle as pkl
+
+        import Output_functions as of
 
         # ====================================|
         # Main optimization solving procedure |
         # ====================================|
-
         # Solver definition
         # -----------------
         optimizer = pyomo.opt.SolverFactory("gurobi")
