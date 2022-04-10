@@ -252,7 +252,7 @@ ehr_inp["Lifetime_retrofit"] = {
 
 #%% Create and solve the model
 # ============================
-import EnergyHubRetrofit_final_multi as ehr
+import EnergyHubRetrofit_multi as ehr
 
 mod = ehr.EnergyHubRetrofit(ehr_inp, 1, 3, 5)  # Initialize the model
 mod.create_model()  # Create the model

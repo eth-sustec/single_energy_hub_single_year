@@ -1767,7 +1767,7 @@ class EnergyHubRetrofit:
         optimizer.options["TimeLimit"] = time_limit
 
         # Excel file with all variable values
-        from EHret_example_final_no_certificates import i
+        from EHret_example import i
 
         if self.optim_mode == 1:
 
